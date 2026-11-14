@@ -12,7 +12,7 @@ Three humans each run their own agent (Claude Code, Cursor, Codex…). All agent
 |---|---|---|
 | **P1 Frontend** | Parshva (@Parshvacancodeit) | `app/page.tsx`, `app/report/**`, `app/issue/**`, `components/**`, `app/globals.css`, `lib/api.ts` (client data layer + mocks), `lib/campus.ts` (UI constants) |
 | **P2 Backend** | ________ | `lib/types.ts`, `lib/supabase-*.ts`, `lib/geo.ts`, `supabase/**`, `app/api/reports/**`, `app/api/admin/assign/**`, `app/api/admin/resolve/**`, `app/admin/**` |
-| **P3 AI** | ________ | `lib/gemini.ts`, `lib/faceBlur.ts`, `lib/image.ts`, `app/api/analyze/**`, `app/api/duplicates/**`, `app/api/admin/verify-fix/**` |
+| **P3 AI** | Bhavya | `lib/ai.ts`, `lib/ai-storage.ts`, `lib/faceBlur.ts`, `lib/image.ts`, `app/api/analyze/**`, `app/api/duplicates/**`, `app/api/admin/verify-fix/**` |
 | Shared (ask the team first) | | `package.json`, `package-lock.json`, `app/layout.tsx`, `next.config.ts`, `README.md`, `AGENTS.md` |
 
 Need a change in someone else's file? **Don't edit it.** Tell your human what to ask for in the team chat.
@@ -38,7 +38,7 @@ git push
 - On a rebase conflict in a file you don't own: keep **their** version.
 
 ## 5. Hard rules
-- No secrets in code or commits. Server-only keys (`SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, `ADMIN_PASSCODE`) never in client components.
+- No secrets in code or commits. Server-only keys (`SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`, `ADMIN_PASSCODE`) never in client components.
 - No new npm packages without the team agreeing (then one person adds it and pushes package files immediately).
 - Mobile-first: 390 px wide, tap targets ≥ 44 px. Loading + error state on every async step.
 - `CampusMap` via `next/dynamic` with `ssr: false`.

@@ -19,7 +19,7 @@
 
 **Rules:**
 1. All code and assets are created during Nov 14–15. Open-source libraries and public APIs are fine. No code from earlier projects.
-2. **AI never blocks a report.** If Gemini fails or times out, the student picks the category manually.
+2. **AI never blocks a report.** If the AI call fails or times out, the student picks the category manually.
 3. **Never commit secrets.** Keys live in `.env.local` and Vercel environment settings only.
 4. Anything mocked is labeled in the UI (e.g. "Demo office dashboard").
 
@@ -61,14 +61,14 @@
 | Live updates | **Supabase Realtime** (`postgres_changes`) on `issues` | |
 | Photo storage | **Supabase Storage** | Public buckets `report-photos`, `resolution-photos` (faces blurred before upload) |
 | Identity | **Supabase anonymous sign-in** | One ID per device = one reporter |
-| AI | Gemini Flash via `@google/genai` | Server only, JSON output; model id in `GEMINI_MODEL` |
+| AI | **Claude** (vision) via `@anthropic-ai/sdk` | Server only; JSON via a forced tool call; model id in `ANTHROPIC_MODEL` (default `claude-sonnet-5-5`) |
 | Face blur | `@mediapipe/tasks-vision` FaceDetector | In the browser before upload; pixelate (§9) |
 | Map | MapLibre GL JS + OpenFreeMap | Style `https://tiles.openfreemap.org/styles/liberty`, no key |
 | Camera | `<input type="file" accept="image/*" capture="environment">` | Works on iOS and Android |
 | Compression | `browser-image-compression` | ≤ 300 KB, max 1280 px, JPEG |
 
 ```bash
-npm i @supabase/supabase-js @google/genai @mediapipe/tasks-vision maplibre-gl browser-image-compression
+npm i @supabase/supabase-js @anthropic-ai/sdk @mediapipe/tasks-vision maplibre-gl browser-image-compression
 ```
 
 ### Environment variables
@@ -76,8 +76,8 @@ npm i @supabase/supabase-js @google/genai @mediapipe/tasks-vision maplibre-gl br
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=      # server only
-GEMINI_API_KEY=                 # server only
-GEMINI_MODEL=
+ANTHROPIC_API_KEY=              # server only
+ANTHROPIC_MODEL=claude-sonnet-5-5
 ADMIN_PASSCODE=                 # server only
 ```
 
@@ -108,7 +108,7 @@ Admin (/admin, passcode)
 
 Server (Next.js API routes)
  ├─ Supabase service-role client (all writes)
- └─ Gemini
+ └─ Claude (vision)
 ```
 
 Clients only **read** from Supabase (and receive Realtime). **All writes go through API routes** with the service-role key, so RLS stays simple and no storage upload policies are needed.
@@ -131,7 +131,8 @@ components/
 lib/
   supabase-browser.ts          # anon client + ensureAnonSession()
   supabase-server.ts           # service-role client + getUserFromRequest()
-  gemini.ts                    # client + 3 prompts + schemas (server)
+  ai.ts                        # Claude client + 3 prompts + schemas (server)
+  ai-storage.ts                # P3 service-role helper for photos (until P2 lands supabase-server.ts)
   faceBlur.ts                  # MediaPipe + pixelate (client)
   image.ts                     # compress, toBase64
   geo.ts                       # haversine + nearestLocation
@@ -301,7 +302,7 @@ JSON bodies. Images are base64 **after** compression and face blur (no `data:` p
 ```
 
 ### `POST /api/duplicates` — P3 (AI) + P2 (query)
-Server takes up to **3** candidates: same `location_id` + `category`, not resolved, created in the last 48 h, newest first. If none, return `[]` without calling Gemini.
+Server takes up to **3** candidates: same `location_id` + `category`, not resolved, created in the last 48 h, newest first. If none, return `[]` without calling the AI.
 ```ts
 // req
 { imageBase64: string; mimeType: "image/jpeg"; locationId: string; category: string }
@@ -328,7 +329,7 @@ Steps: upload to `report-photos/{issueId}/{reportId}.jpg` → insert issue if ne
 ### Admin — P2 (all require `x-admin-passcode`)
 ```ts
 POST /api/admin/assign      { issueId }                 // status='assigned', assigned_team from routing
-POST /api/admin/verify-fix  { issueId, imageBase64 }    // upload resolution-photos/{issueId}.jpg, Gemini before/after
+POST /api/admin/verify-fix  { issueId, imageBase64 }    // upload resolution-photos/{issueId}.jpg, Claude before/after
   → { same_location: boolean; resolved: boolean; confidence: number; reason: string; after_photo_url: string }
 POST /api/admin/resolve     { issueId, note? }          // status='resolved', resolved_at=now()
 ```
@@ -338,23 +339,8 @@ Resolve fires the Realtime update that shows "Fixed" on phones.
 
 ## 9. AI and face blur — owner: P3
 
-### Gemini call pattern (`lib/gemini.ts`)
-```ts
-import { GoogleGenAI, Type } from "@google/genai";
-export const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-const MODEL = process.env.GEMINI_MODEL!;
-
-const res = await ai.models.generateContent({
-  model: MODEL,
-  contents: [{ role: "user", parts: [
-    { inlineData: { mimeType: "image/jpeg", data: imageBase64 } },
-    { text: PROMPT },
-  ]}],
-  config: { responseMimeType: "application/json", responseSchema: SCHEMA, temperature: 0.2 },
-});
-const data = JSON.parse(res.text ?? "{}");
-```
-Wrap every call in a ~12 s timeout + try/catch; on failure return 502.
+### Claude call pattern (`lib/ai.ts`)
+Each prompt is one `messages.create` call with the image(s) as base64 `image` blocks, a single tool whose `input_schema` is the JSON schema below, and `tool_choice: { type: "tool" }` so Claude must answer in that shape. 15 s timeout, 1 retry; on failure the route returns 502 (analyze) or `[]` (duplicates).
 
 ### Prompt 1 — Analyze
 ```
@@ -458,7 +444,7 @@ export async function getDetector() {
 |---|---|---|
 | **P1 — ________** | Report flow, map, notification UI, mobile polish | Real-phone testing, UI bugs |
 | **P2 — ________** | Supabase schema/seed, `/api/reports`, duplicates query, Realtime, admin dashboard + admin APIs, `lib/types.ts` | Seed demo data, end-to-end testing |
-| **P3 — ________** | Gemini + 3 prompts, `/api/analyze`, duplicate AI, verify-fix AI, face blur | Demo script, slides, video, Devpost |
+| **P3 — Bhavya** | Claude + 3 prompts, `/api/analyze`, duplicate AI, verify-fix AI, face blur | Demo script, slides, video, Devpost |
 
 `lib/types.ts` and `supabase/schema.sql` are owned by P2; others propose changes in chat. Merge to `main` small and often; Vercel deploys a preview on every push.
 
@@ -468,7 +454,7 @@ export async function getDetector() {
 
 | Time | Milestone |
 |---|---|
-| **Sat 11 AM–12 PM** | P1: Next.js → repo → Vercel, camera works on a phone over HTTPS. P2: Supabase project, anonymous auth, buckets, schema + seed, Realtime. P3: Gemini key, one photo → JSON. Share keys privately, never in the repo. |
+| **Sat 11 AM–12 PM** | P1: Next.js → repo → Vercel, camera works on a phone over HTTPS. P2: Supabase project, anonymous auth, buckets, schema + seed, Realtime. P3: Anthropic key, one photo → JSON. Share keys privately, never in the repo. |
 | **12–5 PM** | A photo report saves and appears on another phone's map (no AI yet). |
 | **5–10 PM** | AI suggestion + manual fallback, face blur, duplicate confirmation. |
 | **10 PM–2 AM** | Admin dashboard, assign, after-photo verify, resolve, "Fixed" notification. |
@@ -516,7 +502,7 @@ In this order:
 ## 14. Conventions
 
 - TypeScript everywhere; small components; mobile-first (390 px wide, tap targets ≥ 44 px).
-- Never import `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY` or `ADMIN_PASSCODE` in client code.
+- Never import `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY` or `ADMIN_PASSCODE` in client code.
 - `CampusMap` loads with `next/dynamic` and `ssr: false`.
 - Every async step has a loading state and an error state.
 - No new dependencies without telling the team. Nothing outside §2 without asking the team.
