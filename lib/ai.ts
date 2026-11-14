@@ -17,6 +17,7 @@ const KNOWN: Record<string, { label: string; description: string }> = {
   elevator_access: { label: "Elevator / accessibility", description: "elevators, ramps, automatic doors, blocked accessible paths" },
   broken_equipment: { label: "Broken equipment", description: "lights, doors, furniture, water fountains, restrooms, leaks" },
   tech: { label: "Tech", description: "printers, Wi-Fi, screens/projectors, charging stations" },
+  grounds: { label: "Grounds & outdoor", description: "bike racks, benches, outdoor paths and pavement, landscaping, irrigation, outdoor lighting" },
   cleanliness: { label: "Trash & cleanliness", description: "overflowing or knocked-over trash, litter, spills, dirty restroom, out of soap or paper towels, pests" },
   safety_hazard: { label: "Safety hazard", description: "broken glass, exposed wiring, wet floor with no sign, trip hazards (broken pavement, missing bricks, fallen racks), dark path at night, broken handrail" },
   other: { label: "Other", description: "any other campus facilities problem that fits no other category" },

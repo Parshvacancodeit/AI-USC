@@ -19,10 +19,17 @@ update routing set label = 'Broken equipment',
 update routing set label = 'Tech',
   description = 'printers, Wi-Fi, screens/projectors, charging stations' where category = 'tech';
 
+-- grounds, cleanliness, other already exist (added Sat afternoon). Only safety_hazard is missing:
 insert into routing (category, label, description, team_name, team_email) values
-  ('cleanliness',   'Trash & cleanliness', 'overflowing or knocked-over trash, litter, spills, dirty restroom, out of soap or paper towels, pests', 'Facilities — Custodial', null),
-  ('safety_hazard', 'Safety hazard',       'broken glass, exposed wiring, wet floor with no sign, trip hazards (broken pavement, missing bricks, fallen racks), dark path at night, broken handrail', 'Facilities — Maintenance', null)
+  ('safety_hazard', 'Safety hazard', 'broken glass, exposed wiring, wet floor with no sign, trip hazards (broken pavement, missing bricks, fallen racks), dark path at night, broken handrail', 'Facilities — Maintenance', null)
 on conflict (category) do nothing;
+
+update routing set label = 'Grounds & outdoor',
+  description = 'bike racks, benches, outdoor paths and pavement, landscaping, irrigation, outdoor lighting' where category = 'grounds';
+update routing set label = 'Trash & cleanliness',
+  description = 'overflowing or knocked-over trash, litter, spills, dirty restroom, out of soap or paper towels, pests' where category = 'cleanliness';
+update routing set label = 'Other',
+  description = 'any other campus facilities problem that fits no other category' where category = 'other';
 ```
 Office names are placeholders: verify real USC offices (README §5). `issues.category` already has a foreign key
 to `routing(category)`, so the DB itself rejects unknown categories; no CHECK constraint to change.
@@ -30,10 +37,10 @@ to `routing(category)`, so the DB itself rejects unknown categories; no CHECK co
 ### 2. `lib/types.ts`
 `export type Category = string;` (ids come from `routing`). Add to `AnalyzeResult`:
 `emergency: boolean;` and `suggested_new_category?: { id: string; label: string } | null;`
-(Quick alternative if short on time: keep the union and add `"cleanliness" | "safety_hazard"`.)
+(Quick alternative if short on time: keep the union and add `"grounds" | "cleanliness" | "safety_hazard" | "other"`.)
 
 ### 3. `app/api/reports/route.ts`
-Remove the hard-coded `const CATEGORIES = [...]` check (or, quick version, add `"cleanliness", "safety_hazard"` to it). Either look the id up in `routing`
+Remove the hard-coded `const CATEGORIES = [...]` check (or, quick version, add `"grounds", "cleanliness", "safety_hazard", "other"` to it). Either look the id up in `routing`
 (`select category ... eq category ... maybeSingle()` → 400 "Unknown category") or rely on the FK error.
 
 ### 4. Locations used in P3's test photos (not in `locations` yet)
@@ -46,7 +53,7 @@ Add them if we want real reports there. **Drop a pin for real coordinates; don't
 - Load categories at runtime: `supabase.from("routing").select("category, label, description, team_name")`
   (public read is allowed by RLS). Cache in memory; fall back to the current 3 if the request fails.
 - Keep an **icon map for known ids** and a default icon (e.g. `Tag`) for any other id:
-  `elevator_access`, `broken_equipment`, `tech`, `cleanliness` (e.g. `Trash2`), `safety_hazard` (e.g. `TriangleAlert`).
+  `elevator_access`, `broken_equipment`, `tech`, `grounds` (e.g. `Trees`), `cleanliness` (e.g. `Trash2`), `safety_hazard` (e.g. `TriangleAlert`), `other` (e.g. `CircleHelp`).
 - Replace `CATEGORIES[c]` lookups with the loaded list (label = `label ?? id`, team = `team_name`).
   Every place that indexes `CATEGORIES[...]` must tolerate an unknown id (`?.` + default) so a new row never crashes a screen.
 - **Emergency screen (important):** if `/api/analyze` returns `emergency: true`, do NOT show the form or submit.

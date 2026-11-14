@@ -160,8 +160,10 @@ Starting set (placeholder offices, verify):
 | `elevator_access` | Elevator / accessibility | Elevators, ramps, automatic doors, blocked accessible paths | Facilities: Elevators & Accessibility |
 | `broken_equipment` | Broken equipment | Lights, doors, furniture, water fountains, restrooms, leaks | Facilities: Maintenance |
 | `tech` | Tech | Printers, Wi-Fi, screens/projectors, charging stations | ITS |
+| `grounds` | Grounds & outdoor | Bike racks, benches, outdoor paths and pavement, landscaping, irrigation, outdoor lighting | Facilities: Grounds |
 | `cleanliness` | Trash & cleanliness | Overflowing or knocked-over trash, litter, spills, dirty restroom, out of soap or paper towels, pests (usually low–medium) | Facilities: Custodial |
 | `safety_hazard` | Safety hazard | Broken glass, exposed wiring, wet floor with no sign, trip hazards, dark path at night, broken handrail (usually high–urgent) | Facilities: Maintenance |
+| `other` | Other | Any other campus facilities problem | Ripple triage (USG) |
 
 **Not handled by Ripple:** fires, injuries, medical emergencies, anyone in danger, crimes, and reports about people.
 `/api/analyze` returns `emergency: true` for these; the report screen shows **"Call USC DPS: 213-740-4321 (24/7) or 911"**
