@@ -2,7 +2,7 @@
 // Each one uses the real API route / Supabase when it exists, and a labeled MOCK otherwise,
 // so the UI works end to end before P2 and P3 land their pieces.
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { CATEGORIES, locationName, registerLocations, registerRouting } from "./campus";
+import { CATEGORIES, getLocation, locationName, registerLocations, registerRouting } from "./campus";
 import { blurFaces as realBlur, preloadFaceDetector } from "./faceBlur";
 import type {
   Location,
@@ -149,6 +149,7 @@ export async function submitReport(req: ReportRequest): Promise<ReportResponse> 
   if (MOCK) return mockSubmit(req);
   const token = await accessToken();
   const out = await post<ReportResponse>("/api/reports", req, () => mockSubmit(req), { Authorization: `Bearer ${token}` });
+  if ("newIssue" in req && req.newIssue.location) registerLocations([req.newIssue.location]);
   addMyIssue(out.issueId);
   return out;
 }
@@ -173,11 +174,20 @@ export function loadCatalog(): Promise<void> {
   return catalogLoaded;
 }
 
+/** Fetches any locations the registry doesn't know yet (e.g. a spot someone just reported). */
+async function ensureLocations(ids: string[]) {
+  const missing = [...new Set(ids)].filter((id) => !getLocation(id));
+  if (MOCK || missing.length === 0) return;
+  const { data } = await supa().from("locations").select("id,name,lat,lng,floors").in("id", missing);
+  if (data) registerLocations(data as Location[]);
+}
+
 export async function listIssues(): Promise<Issue[]> {
   await loadCatalog().catch(() => {});
   if (MOCK) return readStore();
   const { data, error } = await supa().from("issues").select("*").order("created_at", { ascending: false });
   if (error) throw new ApiError(500, error.message);
+  await ensureLocations((data as Issue[]).map((i) => i.location_id)).catch(() => {});
   return data as Issue[];
 }
 
@@ -220,7 +230,11 @@ export function subscribeIssues(cb: (issue: Issue) => void): () => void {
   }
   const ch = supa()
     .channel("issues-feed")
-    .on("postgres_changes", { event: "*", schema: "public", table: "issues" }, (p) => p.new && cb(p.new as Issue))
+    .on("postgres_changes", { event: "*", schema: "public", table: "issues" }, (p) => {
+      const issue = p.new as Issue;
+      if (!issue?.id) return;
+      ensureLocations([issue.location_id]).catch(() => {}).finally(() => cb(issue));
+    })
     .subscribe();
   return () => void supa().removeChannel(ch);
 }

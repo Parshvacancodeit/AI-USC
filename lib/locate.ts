@@ -5,6 +5,7 @@ import type { Location } from "./types";
 export type Spot = {
   kind: "inside" | "near" | "campus";
   label: string; // human sentence for the UI
+  hint: string | null; // direction guide, e.g. "Southwest side · about 15 m"
   location: Location; // what gets saved (a building, or a custom spot)
   building: Building | null;
 };
@@ -49,7 +50,7 @@ const floorsOf = (b: Building) => (b.id === "leavey" ? ["B", "1", "2"] : Array.f
 export function locate(lat: number, lng: number): Spot {
   const hit = USC_BUILDINGS.find((b) => inside(lng, lat, b.ring));
   if (hit) {
-    return { kind: "inside", label: `Inside ${hit.name}`, building: hit, location: { id: hit.id, name: hit.name, lat: hit.lat, lng: hit.lng, floors: floorsOf(hit) } };
+    return { kind: "inside", label: `Inside ${hit.name}`, hint: null, building: hit, location: { id: hit.id, name: hit.name, lat: hit.lat, lng: hit.lng, floors: floorsOf(hit) } };
   }
   let near: Building | null = null;
   let d = Infinity;
@@ -61,10 +62,12 @@ export function locate(lat: number, lng: number): Spot {
     }
   }
   const id = `spot-${Math.round(lat * 1e5)}-${Math.round(-lng * 1e5)}`;
-  if (near && d <= 250) {
+  if (near) {
     const m = Math.max(5, Math.round(d / 5) * 5);
-    const name = `${m} m ${direction(near, { lat, lng })} of ${near.name}`;
-    return { kind: "near", label: name, building: near, location: { id, name, lat, lng, floors: [] } };
+    const side = direction(near, { lat, lng });
+    const hint = `${side[0].toUpperCase()}${side.slice(1)} side · about ${m} m from the building`;
+    const name = `Near ${near.name} (${side} side)`;
+    return { kind: "near", label: `Near ${near.name}`, hint, building: near, location: { id, name, lat, lng, floors: [] } };
   }
-  return { kind: "campus", label: "Outdoors on campus", building: null, location: { id, name: "Outdoors on USC campus", lat, lng, floors: [] } };
+  return { kind: "campus", label: "Outdoors on campus", hint: null, building: null, location: { id, name: "Outdoors on USC campus", lat, lng, floors: [] } };
 }

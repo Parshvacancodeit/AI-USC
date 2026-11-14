@@ -230,7 +230,13 @@ export default function CampusMap({ issues, onSelect, onBuilding, focusId, focus
 
       // Intro: sweep down onto campus
       const cam = m.cameraForBounds(campusBounds(), { padding: { top: 140, bottom: 300, left: 40, right: 40 }, ...CAMERA });
-      if (cam) m.flyTo({ ...cam, ...CAMERA, duration: 2600, essential: true, curve: 1.3 });
+      let seen = false;
+      try {
+        seen = sessionStorage.getItem("ripple-intro") === "1";
+        sessionStorage.setItem("ripple-intro", "1");
+      } catch {}
+      if (cam && seen) m.jumpTo({ ...cam, ...CAMERA });
+      else if (cam) m.flyTo({ ...cam, ...CAMERA, duration: 2600, essential: true, curve: 1.3 });
     });
 
     const ms = markers.current;

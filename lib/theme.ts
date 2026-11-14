@@ -6,8 +6,8 @@ export type Theme = "dark" | "light";
 const KEY = "ripple-theme";
 
 export function currentTheme(): Theme {
-  if (typeof document === "undefined") return "dark";
-  return document.documentElement.dataset.theme === "light" ? "light" : "dark";
+  if (typeof document === "undefined") return "light";
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
 }
 
 export function setTheme(t: Theme) {
@@ -20,7 +20,7 @@ export function setTheme(t: Theme) {
 }
 
 export function useTheme(): Theme {
-  const [t, setT] = useState<Theme>("dark");
+  const [t, setT] = useState<Theme>(currentTheme);
   useEffect(() => {
     setT(currentTheme());
     const on = (e: Event) => setT((e as CustomEvent<Theme>).detail);

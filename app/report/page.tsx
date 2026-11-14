@@ -63,7 +63,7 @@ export default function ReportPage() {
       navigator.geolocation.getCurrentPosition(
         (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
         () => resolve(null),
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
       );
     });
     fileRef.current?.click();
@@ -301,7 +301,7 @@ export default function ReportPage() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-semibold">{spot?.label ?? loc.name}</p>
-                        <p className="truncate text-xs text-muted">{autoLoc ? gpsNote : "Pinned on the map"}</p>
+                        <p className="truncate text-xs text-muted">{spot?.hint ? `${spot.hint} · ` : ""}{autoLoc ? gpsNote : "Pinned on the map"}</p>
                       </div>
                       <button onClick={() => { haptic(); toLocation(); }} className="h-9 rounded-full bg-surface-2 px-3 text-xs font-semibold text-accent">
                         Adjust
