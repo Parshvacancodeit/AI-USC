@@ -1,6 +1,6 @@
 // P3 — POST /api/duplicates (README §8). Up to 3 candidates: same location + category,
-// not resolved, created in the last 48 h. No candidates → [] without calling Gemini.
-// If Supabase or Gemini is unavailable → { matches: [] } so the report still goes through as new.
+// not resolved, created in the last 48 h. No candidates → [] without calling Claude.
+// If Supabase or Claude is unavailable → { matches: [] } so the report still goes through as new.
 import { NextResponse } from "next/server";
 import { matchDuplicates } from "@/lib/ai";
 import { photoBase64, publicUrl, supabaseAdmin } from "@/lib/ai-storage";

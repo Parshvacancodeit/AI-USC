@@ -9,7 +9,9 @@ export class AIUnavailableError extends Error {}
 
 const CATEGORIES: Category[] = ["elevator_access", "broken_equipment", "tech"];
 const PRIORITIES: Priority[] = ["low", "medium", "high", "urgent"];
-const TIMEOUT_MS = 15_000;
+// Routes have maxDuration = 30 s. 12 s per attempt × (1 try + 1 retry) + backoff stays under it,
+// so a slow Claude call ends as our clean 502 / [] fallback instead of a Vercel 504.
+const TIMEOUT_MS = 12_000;
 
 let client: Anthropic | null = null;
 function setup() {
@@ -19,10 +21,23 @@ function setup() {
   return { ai: client, model: process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5" };
 }
 
+type MediaType = "image/jpeg" | "image/png" | "image/webp" | "image/gif";
 type Block =
   | { type: "text"; text: string }
-  | { type: "image"; source: { type: "base64"; media_type: "image/jpeg"; data: string } };
-const img = (data: string): Block => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data } });
+  | { type: "image"; source: { type: "base64"; media_type: MediaType; data: string } };
+
+/** Detect the real format from the first bytes; Claude rejects a mismatched media_type.
+ *  Contract says JPEG, but stored photos or an un-recompressed upload may be PNG/WebP. */
+function mediaType(b64: string): MediaType {
+  if (b64.startsWith("iVBORw0KGgo")) return "image/png";
+  if (b64.startsWith("R0lGOD")) return "image/gif";
+  if (b64.startsWith("UklGR") && Buffer.from(b64.slice(0, 16), "base64").subarray(8, 12).toString() === "WEBP") return "image/webp";
+  return "image/jpeg";
+}
+const img = (raw: string): Block => {
+  const data = raw.startsWith("data:") ? raw.slice(raw.indexOf(",") + 1) : raw; // tolerate a data: prefix
+  return { type: "image", source: { type: "base64", media_type: mediaType(data), data } };
+};
 const txt = (text: string): Block => ({ type: "text", text });
 
 /** One Claude call that must answer by calling `tool` with input matching `schema`. */
