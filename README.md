@@ -20,9 +20,8 @@
 **Rules:**
 1. All code and assets are created during Nov 14–15. Open-source libraries and public APIs are fine. No code from earlier projects.
 2. **AI never blocks a report.** If Gemini fails or times out, the student picks the category manually.
-3. **Everything runs on Replit** (we're going for Best Use of Replit).
-4. **Secrets only in Replit Secrets.** Never in the repo or chat.
-5. Anything mocked is labeled in the UI (e.g. "Demo office dashboard").
+3. **Never commit secrets.** Keys live in `.env.local` and Vercel environment settings only.
+4. Anything mocked is labeled in the UI (e.g. "Demo office dashboard").
 
 **Judging:** Impact 30% · Technical & AI 25% · Feasibility 25% · UX 20%.
 
@@ -33,7 +32,7 @@
 ### The one loop that must work
 **Report → AI description → duplicate confirmation → team assignment → after-photo resolution → "Fixed" notification**
 
-**Done means:** two phones report the same problem → both join one issue (reporter count = 2) → admin assigns it → admin uploads an after photo, AI checks it, admin confirms → **both phones show "Fixed"**. Works repeatedly on the deployed Replit URL.
+**Done means:** two phones report the same problem → both join one issue (reporter count = 2) → admin assigns it → admin uploads an after photo, AI checks it, admin confirms → **both phones show "Fixed"**. Works repeatedly on the deployed Vercel URL.
 
 **Coverage:** 3 categories (§5) · 3–5 seeded campus locations.
 
@@ -57,11 +56,11 @@
 | Layer | Choice | Notes |
 |---|---|---|
 | Framework | Next.js (App Router) + TypeScript + Tailwind | UI and API routes in one app |
-| Hosting | **Replit Deployments** (Autoscale) | `.replit.app` is HTTPS, which the camera and GPS need on phones |
-| Database | **Replit Database** (PostgreSQL) | `DATABASE_URL` in Secrets; query with `pg` |
-| Photo storage | **Replit App Storage** via `@replit/object-storage` | Keys `report-photos/...`, `resolution-photos/...`; served by `GET /api/photo/[...key]` |
-| Live updates | Polling `GET /api/issues?since=` every 3 s | No websockets to break on stage |
-| Identity | Device ID | Random UUID in `localStorage`, sent as `x-device-id`; one ID per device = one reporter |
+| Hosting | **Vercel** | HTTPS is required for camera + GPS on phones |
+| Database | **Supabase Postgres** | |
+| Live updates | **Supabase Realtime** (`postgres_changes`) on `issues` | |
+| Photo storage | **Supabase Storage** | Public buckets `report-photos`, `resolution-photos` (faces blurred before upload) |
+| Identity | **Supabase anonymous sign-in** | One ID per device = one reporter |
 | AI | Gemini Flash via `@google/genai` | Server only, JSON output; model id in `GEMINI_MODEL` |
 | Face blur | `@mediapipe/tasks-vision` FaceDetector | In the browser before upload; pixelate (§9) |
 | Map | MapLibre GL JS + OpenFreeMap | Style `https://tiles.openfreemap.org/styles/liberty`, no key |
@@ -69,17 +68,25 @@
 | Compression | `browser-image-compression` | ≤ 300 KB, max 1280 px, JPEG |
 
 ```bash
-npm i pg @replit/object-storage @google/genai @mediapipe/tasks-vision maplibre-gl browser-image-compression
+npm i @supabase/supabase-js @google/genai @mediapipe/tasks-vision maplibre-gl browser-image-compression
 ```
 
-**Replit Secrets:** `DATABASE_URL` (added automatically with the database) · `GEMINI_API_KEY` · `GEMINI_MODEL` · `ADMIN_PASSCODE`
+### Environment variables
+```
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=      # server only
+GEMINI_API_KEY=                 # server only
+GEMINI_MODEL=
+ADMIN_PASSCODE=                 # server only
+```
 
-### Replit setup (first hour)
-- [ ] Create the Replit App (Next.js); turn on GitHub sync to this repo
-- [ ] Add Replit Database; run `db/schema.sql`, then `db/seed.sql`
-- [ ] Add App Storage
-- [ ] Add Secrets
-- [ ] Deploy (Autoscale) by 12 PM and test the camera on a real phone
+### Setup (first hour)
+- [ ] Next.js app → this repo → Vercel; camera works on a real phone over HTTPS
+- [ ] Supabase: Authentication → Providers → **enable Anonymous sign-ins**
+- [ ] Supabase Storage: create **public** buckets `report-photos` and `resolution-photos`
+- [ ] Run `supabase/schema.sql`, then `supabase/seed.sql` in the SQL editor; confirm Realtime is on for `issues`
+- [ ] Add env vars to `.env.local` and Vercel
 
 ---
 
@@ -87,25 +94,24 @@ npm i pg @replit/object-storage @google/genai @mediapipe/tasks-vision maplibre-g
 
 ```
 Phone (Next.js client)
- ├─ device id (localStorage) → header x-device-id
+ ├─ anonymous sign-in (Supabase) → user id = reporter_id
  ├─ camera → compress → face blur → preview
  ├─ POST /api/analyze     → AI suggestion
  ├─ POST /api/duplicates  → candidate matches
  ├─ POST /api/reports     → save photo + issue/report rows
- └─ poll GET /api/issues?since= every 3 s → map + "Fixed" toast
+ └─ Realtime subscription on `issues` → map + "Fixed" toast
 
 Admin (/admin, passcode)
  ├─ POST /api/admin/assign
  ├─ POST /api/admin/verify-fix  → AI before/after verdict
  └─ POST /api/admin/resolve
 
-Server (Next.js API routes on Replit)
- ├─ Replit Database (pg)
- ├─ Replit App Storage (photos)
+Server (Next.js API routes)
+ ├─ Supabase service-role client (all writes)
  └─ Gemini
 ```
 
-The browser never talks to the database or storage directly; **everything goes through API routes.**
+Clients only **read** from Supabase (and receive Realtime). **All writes go through API routes** with the service-role key, so RLS stays simple and no storage upload policies are needed.
 
 ```
 app/
@@ -116,8 +122,6 @@ app/
   api/analyze/route.ts
   api/duplicates/route.ts
   api/reports/route.ts
-  api/issues/route.ts          # polling
-  api/photo/[...key]/route.ts  # streams photo from App Storage
   api/admin/assign/route.ts
   api/admin/verify-fix/route.ts
   api/admin/resolve/route.ts
@@ -125,15 +129,14 @@ components/
   CampusMap.tsx                # client-only (next/dynamic, ssr: false)
   IssueCard.tsx  StatusBadge.tsx  Toast.tsx  StepHeader.tsx
 lib/
-  device.ts                    # getDeviceId() (client)
-  db.ts                        # pg Pool + query helper (server)
-  storage.ts                   # App Storage upload/download (server)
+  supabase-browser.ts          # anon client + ensureAnonSession()
+  supabase-server.ts           # service-role client + getUserFromRequest()
   gemini.ts                    # client + 3 prompts + schemas (server)
   faceBlur.ts                  # MediaPipe + pixelate (client)
   image.ts                     # compress, toBase64
   geo.ts                       # haversine + nearestLocation
   types.ts                     # shared types (owner: P2)
-db/
+supabase/
   schema.sql
   seed.sql
 ```
@@ -156,7 +159,7 @@ Status: `open` (red) → `assigned` (amber) → `resolved` (green).
 
 ## 6. Database — owner: P2
 
-### `db/schema.sql`
+### `supabase/schema.sql`
 ```sql
 create extension if not exists pgcrypto;
 
@@ -199,7 +202,7 @@ create table issues (
 create table reports (
   id uuid primary key default gen_random_uuid(),
   issue_id uuid not null references issues(id) on delete cascade,
-  reporter_id uuid not null,           -- x-device-id
+  reporter_id uuid not null,           -- Supabase anonymous user id
   photo_path text not null,
   note text,
   ai_suggestion jsonb,
@@ -222,12 +225,21 @@ create trigger reports_count
 after insert on reports
 for each row execute function refresh_reporter_count();
 
-create index issues_updated_at on issues (updated_at);
+-- RLS: clients may read; all writes go through the server (service role bypasses RLS)
+alter table locations enable row level security;
+alter table routing   enable row level security;
+alter table issues    enable row level security;
+alter table reports   enable row level security;
+
+create policy "read locations" on locations for select using (true);
+create policy "read routing"   on routing   for select using (true);
+create policy "read issues"    on issues    for select using (true);
+create policy "read reports"   on reports   for select using (true);
+
+alter publication supabase_realtime add table issues;
 ```
 
-**Every UPDATE to `issues` must set `updated_at = now()`**, or polling won't see it.
-
-### `db/seed.sql`
+### `supabase/seed.sql`
 Get coordinates by dropping a pin on each building (Google Maps → right-click → copy coordinates). Don't guess.
 ```sql
 insert into routing (category, team_name, team_email) values
@@ -260,10 +272,10 @@ insert into locations (id, name, lat, lng, floors) values
 - Tap a pin → bottom sheet: photo, title, status, count.
 - "My issues" = issues this device reported.
 
-### Notifications — owner: P2 (API) + P1 (UI)
-- Poll `GET /api/issues?since=` every 3 s while the app is open; pause when the tab is hidden.
+### Notifications — owner: P2 (Realtime) + P1 (UI)
+- Subscribe to `postgres_changes` UPDATE on `issues`.
 - If an issue in "my issues" changes to `resolved` → toast "✅ Fixed: {title}" + `navigator.vibrate?.(200)` (Android only).
-- Update map pins for every returned issue.
+- Update map pins on any INSERT/UPDATE.
 
 ### Admin dashboard (`/admin`) — owner: P2
 - Header: **"Demo office dashboard — in production, reports route to existing USC offices."**
@@ -299,7 +311,7 @@ Server takes up to **3** candidates: same `location_id` + `category`, not resolv
 ```
 
 ### `POST /api/reports` — P2
-Header `x-device-id` (must be a UUID) → `reporter_id`.
+Header `Authorization: Bearer <supabase access token>`; server verifies with `supabaseAdmin.auth.getUser(token)` → `reporter_id`.
 ```ts
 // join existing
 { imageBase64: string; existingIssueId: string; note?: string; aiSuggestion?: object; aiUsed: boolean }
@@ -313,16 +325,6 @@ Header `x-device-id` (must be a UUID) → `reporter_id`.
 ```
 Steps: upload to `report-photos/{issueId}/{reportId}.jpg` → insert issue if new (with `before_photo_path`) → insert report (trigger updates count).
 
-### `GET /api/issues?since=<iso>` — P2
-```ts
-// 200 — issues with updated_at > since (no since: all open/assigned + resolved in last 24 h)
-{ issues: Issue[]; serverTime: string }   // client uses serverTime as next `since`
-// GET /api/issues?mine=1 with x-device-id → this device's issues
-```
-
-### `GET /api/photo/[...key]` — P2
-Streams the object from App Storage as `image/jpeg`. All `photo_url` fields point here.
-
 ### Admin — P2 (all require `x-admin-passcode`)
 ```ts
 POST /api/admin/assign      { issueId }                 // status='assigned', assigned_team from routing
@@ -330,7 +332,7 @@ POST /api/admin/verify-fix  { issueId, imageBase64 }    // upload resolution-pho
   → { same_location: boolean; resolved: boolean; confidence: number; reason: string; after_photo_url: string }
 POST /api/admin/resolve     { issueId, note? }          // status='resolved', resolved_at=now()
 ```
-All three set `updated_at = now()`.
+Resolve fires the Realtime update that shows "Fixed" on phones.
 
 ---
 
@@ -455,10 +457,10 @@ export async function getDetector() {
 | Person | Owns | After ~10 PM |
 |---|---|---|
 | **P1 — ________** | Report flow, map, notification UI, mobile polish | Real-phone testing, UI bugs |
-| **P2 — ________** | Database + seed, App Storage, `/api/reports`, `/api/issues`, `/api/photo`, duplicates query, admin dashboard + admin APIs, `lib/types.ts` | Seed demo data, end-to-end testing |
-| **P3 — ________** | Gemini + 3 prompts, `/api/analyze`, duplicate AI, verify-fix AI, face blur, Replit evidence screenshots | Demo script, slides, video, Devpost |
+| **P2 — ________** | Supabase schema/seed, `/api/reports`, duplicates query, Realtime, admin dashboard + admin APIs, `lib/types.ts` | Seed demo data, end-to-end testing |
+| **P3 — ________** | Gemini + 3 prompts, `/api/analyze`, duplicate AI, verify-fix AI, face blur | Demo script, slides, video, Devpost |
 
-`lib/types.ts` and `db/schema.sql` are owned by P2; others propose changes in chat. Merge to `main` small and often; redeploy after each working milestone.
+`lib/types.ts` and `supabase/schema.sql` are owned by P2; others propose changes in chat. Merge to `main` small and often; Vercel deploys a preview on every push.
 
 ---
 
@@ -466,7 +468,7 @@ export async function getDetector() {
 
 | Time | Milestone |
 |---|---|
-| **Sat 11 AM–12 PM** | Ask the Replit sponsor what they judge on. P1: Replit App + GitHub sync + deploy, camera works on a phone over HTTPS. P2: Database, schema + seed, App Storage, `/api/issues`. P3: Gemini key in Secrets, one photo → JSON. |
+| **Sat 11 AM–12 PM** | P1: Next.js → repo → Vercel, camera works on a phone over HTTPS. P2: Supabase project, anonymous auth, buckets, schema + seed, Realtime. P3: Gemini key, one photo → JSON. Share keys privately, never in the repo. |
 | **12–5 PM** | A photo report saves and appears on another phone's map (no AI yet). |
 | **5–10 PM** | AI suggestion + manual fallback, face blur, duplicate confirmation. |
 | **10 PM–2 AM** | Admin dashboard, assign, after-photo verify, resolve, "Fixed" notification. |
@@ -484,7 +486,7 @@ export async function getDetector() {
 In this order:
 1. "+points" line in the Fixed toast (~30 min)
 2. Simple USG stats on `/admin`: open issues per location, average time-to-fix (~2 h)
-3. Ask: ask a place a question, others answer with a photo or text, shown via the same polling (~3–4 h)
+3. Ask: ask a place a question, others answer with a photo or text, shown via the same Realtime subscription (~3–4 h)
 
 ---
 
@@ -498,7 +500,7 @@ In this order:
 3. Admin: assign → upload after photo → AI "Resolved, 0.9" → Confirm.
 4. Both phones show "✅ Fixed."
 
-**Pitch (3 min):** problem with real USC examples (0:00–0:30) → live loop (0:30–2:00) → roadmap: Ask / Help / Lost & Found / Lantern (2:00–2:30) → adoption: USG runs it, reports go to existing offices, Leavey + two residence halls pilot, built on Replit (2:30–3:00).
+**Pitch (3 min):** problem with real USC examples (0:00–0:30) → live loop (0:30–2:00) → roadmap: Ask / Help / Lost & Found / Lantern (2:00–2:30) → adoption: USG runs it, reports go to existing offices, Leavey + two residence halls pilot (2:30–3:00).
 
 **Backup:** pre-recorded video of the full loop.
 
@@ -514,7 +516,7 @@ In this order:
 ## 14. Conventions
 
 - TypeScript everywhere; small components; mobile-first (390 px wide, tap targets ≥ 44 px).
-- Never import `DATABASE_URL`, `GEMINI_API_KEY` or `ADMIN_PASSCODE` in client code.
+- Never import `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY` or `ADMIN_PASSCODE` in client code.
 - `CampusMap` loads with `next/dynamic` and `ssr: false`.
 - Every async step has a loading state and an error state.
 - No new dependencies without telling the team. Nothing outside §2 without asking the team.
@@ -526,6 +528,5 @@ In this order:
 - [ ] Names for P1 / P2 / P3
 - [ ] Final 3–5 locations + real coordinates
 - [ ] Verified USC office names (§5)
-- [ ] Replit deployment URL
-- [ ] What the Replit sponsor judges on
+- [ ] Vercel deployment URL
 - [ ] Live-demo object to photograph
