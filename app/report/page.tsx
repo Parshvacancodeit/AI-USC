@@ -1,9 +1,12 @@
 "use client";
+import { Camera, Check, MapPin, Phone, Search, ShieldCheck, Sparkles, Users } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { CategoryIcon } from "@/components/Icon";
+import { haptic } from "@/lib/haptics";
 import StepHeader from "@/components/StepHeader";
-import { ApiError, analyze, blurFaces, findDuplicates, prepareImage, submitReport } from "@/lib/api";
+import { ApiError, analyze, blurFaces, findDuplicates, preloadFaceDetector, prepareImage, submitReport } from "@/lib/api";
 import { CATEGORIES, LOCATIONS, PRIORITIES, nearestLocation } from "@/lib/campus";
 import type { AnalyzeResult, Category, DuplicateMatch, Priority } from "@/lib/types";
 
@@ -39,10 +42,12 @@ export default function ReportPage() {
   const [result, setResult] = useState<{ issueId: string; count: number; joined: boolean } | null>(null);
 
   const loc = LOCATIONS.find((l) => l.id === locId) ?? null;
+  useEffect(() => void preloadFaceDetector(), []);
 
   // 1 → 2: capture, compress, blur
   async function onFile(file?: File) {
     if (!file) return;
+    haptic("medium");
     setErr(null);
     setStep("privacy");
     setBusy("Blurring faces on your phone…");
@@ -126,8 +131,10 @@ export default function ReportPage() {
             newIssue: { locationId: loc.id, floor: floor ?? undefined, category: form.category, title: form.title.trim(), description: form.description.trim() || undefined, priority: form.priority },
           });
       setResult({ issueId: out.issueId, count: out.reporterCount, joined: !!existingIssueId });
+      haptic("success");
       setStep("done");
     } catch (e) {
+      haptic("warning");
       setErr(e instanceof ApiError && e.status === 409 ? "You already reported this one. We'll tell you when it's fixed." : `Couldn't send: ${(e as Error).message}`);
     } finally {
       setBusy(null);
@@ -150,15 +157,15 @@ export default function ReportPage() {
 
       <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => onFile(e.target.files?.[0] ?? undefined)} />
 
-      <div className="flex-1 px-4 py-4">
+      <div key={step} className="flex-1 px-4 py-4 animate-fade-up">
         {err && <p className="mb-3 rounded-xl bg-[#fdecea] p-3 text-sm text-open">{err}</p>}
 
         {/* 1. Capture */}
         {step === "capture" && (
           <div className="flex h-full flex-col items-center justify-center gap-6 pt-10 text-center">
-            <button onClick={() => fileRef.current?.click()} className="relative grid h-44 w-44 place-items-center rounded-full bg-cardinal text-6xl text-white shadow-2xl shadow-cardinal/40 active:scale-95 transition">
-              <span className="pin-ring !bg-cardinal/40" />
-              📸
+            <button onClick={() => fileRef.current?.click()} className="relative grid h-40 w-40 place-items-center rounded-full bg-gradient-to-b from-[#b3121b] to-cardinal-dark text-white shadow-2xl shadow-cardinal/40 ring-4 ring-gold/70 ring-offset-4 ring-offset-canvas transition active:scale-95" aria-label="Take a photo">
+              <span className="pin-ring !bg-cardinal/25" />
+              <Camera size={58} strokeWidth={1.8} />
             </button>
             <div>
               <p className="text-2xl font-bold">Snap the problem</p>
@@ -167,12 +174,14 @@ export default function ReportPage() {
             <div className="grid w-full grid-cols-3 gap-2 text-xs">
               {Object.values(CATEGORIES).map((c) => (
                 <div key={c.label} className="rounded-2xl bg-white p-3">
-                  <p className="text-xl">{c.icon}</p>
+                  <c.Icon size={20} className="mx-auto text-cardinal" />
                   <p className="mt-1 font-semibold">{c.label}</p>
                 </div>
               ))}
             </div>
-            <p className="text-xs text-muted">🚨 Emergency? Don&apos;t report here. <a href="tel:+12137404321" className="font-semibold text-cardinal underline">Call DPS</a></p>
+            <a href="tel:+12137404321" className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs text-muted shadow-sm">
+              <Phone size={14} className="text-open" /> Emergency? Don&apos;t report here. <b className="text-cardinal">Call DPS</b>
+            </a>
           </div>
         )}
 
@@ -185,10 +194,10 @@ export default function ReportPage() {
             ) : (
               <>
                 <div className="flex gap-3 rounded-2xl bg-white p-4">
-                  <span className="text-2xl">🛡️</span>
+                  <ShieldCheck size={28} className="shrink-0 text-resolved" />
                   <div>
                     <p className="font-semibold">Faces blurred on your phone before upload</p>
-                    <p className="text-sm text-muted">{faces > 0 ? `${faces} face${faces > 1 ? "s" : ""} blurred. ` : "No faces found. "}The original photo never leaves your device.</p>
+                    <p className="text-sm text-muted">{faces > 0 ? `${faces} face${faces > 1 ? "s" : ""} blurred. ` : faces < 0 ? "Couldn't run the face check on this device. " : "No faces in this photo. "}The original photo never leaves your device.</p>
                   </div>
                 </div>
                 <Actions secondary={{ label: "Retake", onClick: () => fileRef.current?.click() }} primary={{ label: "Looks good", onClick: toLocation }} />
@@ -200,7 +209,11 @@ export default function ReportPage() {
         {/* 3. Location */}
         {step === "location" && (
           <div className="space-y-4">
-            {gpsNote && <p className="text-sm text-muted">📍 {gpsNote}</p>}
+            {gpsNote && (
+              <p className="flex items-center gap-1.5 text-sm text-muted">
+                <MapPin size={15} className="text-cardinal" /> {gpsNote}
+              </p>
+            )}
             <div className="space-y-2">
               {LOCATIONS.map((l) => (
                 <button
@@ -212,7 +225,7 @@ export default function ReportPage() {
                   className={`flex h-14 w-full items-center justify-between rounded-2xl border-2 bg-white px-4 text-left text-[15px] font-semibold transition ${locId === l.id ? "border-cardinal" : "border-transparent"}`}
                 >
                   {l.name}
-                  {locId === l.id && <span className="text-cardinal">✓</span>}
+                  {locId === l.id && <Check size={20} strokeWidth={3} className="text-cardinal" />}
                 </button>
               ))}
             </div>
@@ -246,7 +259,7 @@ export default function ReportPage() {
                   <p className="rounded-xl bg-gold/25 p-3 text-sm">AI couldn&apos;t tell what&apos;s wrong. Pick a category and add a short title.</p>
                 ) : (
                   <p className="flex items-center gap-2 text-sm text-muted">
-                    <span className="rounded-full bg-cardinal px-2 py-0.5 text-[11px] font-semibold text-white">✨ AI</span>
+                    <span className="flex items-center gap-1 rounded-full bg-cardinal px-2 py-0.5 text-[11px] font-semibold text-white"><Sparkles size={11} /> AI</span>
                     Suggested from your photo · edit anything
                   </p>
                 )}
@@ -254,7 +267,7 @@ export default function ReportPage() {
                   <div className="grid grid-cols-3 gap-2">
                     {(Object.keys(CATEGORIES) as Category[]).map((c) => (
                       <button key={c} onClick={() => setForm({ ...form, category: c })} className={`rounded-xl border-2 bg-white p-2 text-xs font-semibold transition ${form.category === c ? "border-cardinal" : "border-transparent"}`}>
-                        <span className="block text-lg">{CATEGORIES[c].icon}</span>
+                        <CategoryIcon category={c} size={20} className="mx-auto mb-1 text-cardinal" />
                         {CATEGORIES[c].label}
                       </button>
                     ))}
@@ -289,7 +302,7 @@ export default function ReportPage() {
               <div className="flex flex-col items-center gap-3 pt-16 text-center">
                 <div className="relative h-20 w-20">
                   <span className="pin-ring !bg-cardinal/30" />
-                  <div className="absolute inset-4 grid place-items-center rounded-full bg-cardinal text-white">⌁</div>
+                  <div className="absolute inset-4 grid place-items-center rounded-full bg-cardinal text-white"><Search size={20} /></div>
                 </div>
                 <p className="text-sm text-muted">{busy}</p>
               </div>
@@ -303,12 +316,12 @@ export default function ReportPage() {
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={m.photo_url} alt="" className="h-20 w-20 rounded-xl object-cover" />
                       ) : (
-                        <div className="grid h-20 w-20 place-items-center rounded-xl bg-canvas text-3xl">{CATEGORIES[form.category].icon}</div>
+                        <div className="grid h-20 w-20 place-items-center rounded-xl bg-gradient-to-br from-cardinal to-cardinal-dark text-gold"><CategoryIcon category={form.category} size={30} /></div>
                       )}
                       <div className="min-w-0">
                         <p className="font-semibold">{m.title}</p>
-                        <p className="text-xs text-muted">👥 {m.reporter_count} students reported</p>
-                        <p className="mt-1 text-xs text-muted">✨ {m.reason}</p>
+                        <p className="flex items-center gap-1 text-xs text-muted"><Users size={12} /> {m.reporter_count} students reported</p>
+                        <p className="mt-1 flex items-start gap-1 text-xs text-muted"><Sparkles size={12} className="mt-0.5 shrink-0 text-cardinal" /> {m.reason}</p>
                       </div>
                     </div>
                     <button onClick={() => submit(m.issue_id)} className="h-12 w-full rounded-xl bg-cardinal font-semibold text-white active:scale-[0.98] transition">
@@ -329,9 +342,9 @@ export default function ReportPage() {
           <div className="flex min-h-[80dvh] flex-col items-center justify-center gap-4 text-center">
             <div className="relative grid h-28 w-28 place-items-center">
               <span className="pin-ring !bg-resolved/40" />
-              <div className="grid h-24 w-24 place-items-center rounded-full bg-resolved text-5xl text-white">✓</div>
+              <div className="grid h-24 w-24 place-items-center rounded-full bg-resolved text-white"><Check size={52} strokeWidth={3} /></div>
             </div>
-            <p className="text-2xl font-bold">Reported. Fight on! ✌️</p>
+            <p className="text-2xl font-bold">Reported. Fight On!</p>
             <p className="text-[15px] text-muted">
               {result.joined ? `You're Trojan #${result.count} to report this. ` : ""}
               You&apos;ll get an update here when it&apos;s fixed.
@@ -379,11 +392,11 @@ function Actions({ primary, secondary }: { primary: Btn; secondary?: Btn }) {
   return (
     <div className="flex gap-2 pt-2">
       {secondary && (
-        <button onClick={secondary.onClick} className="h-14 flex-1 rounded-2xl bg-white text-[16px] font-semibold">
+        <button onClick={() => { haptic(); secondary.onClick(); }} className="h-14 flex-1 rounded-2xl bg-white text-[16px] font-semibold">
           {secondary.label}
         </button>
       )}
-      <button onClick={primary.onClick} disabled={primary.disabled} className="h-14 flex-[2] rounded-2xl bg-cardinal text-[16px] font-semibold text-white transition active:scale-[0.98] disabled:opacity-40">
+      <button onClick={() => { haptic("medium"); primary.onClick(); }} disabled={primary.disabled} className="h-14 flex-[2] rounded-2xl bg-cardinal text-[16px] font-semibold text-white transition active:scale-[0.98] disabled:opacity-40">
         {primary.label}
       </button>
     </div>

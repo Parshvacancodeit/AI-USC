@@ -2,8 +2,8 @@
 // Each one uses the real API route / Supabase when it exists, and a labeled MOCK otherwise,
 // so the UI works end to end before P2 and P3 land their pieces.
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import imageCompression from "browser-image-compression";
 import { CATEGORIES, locationName } from "./campus";
+import { blurFaces as realBlur, preloadFaceDetector } from "./faceBlur";
 import type {
   AnalyzeRequest,
   AnalyzeResult,
@@ -52,21 +52,42 @@ export function photoUrl(path: string | null, bucket = "report-photos"): string 
 // ---------- Images ----------
 // TODO(P3): swap for lib/image.ts + lib/faceBlur.ts when they land.
 export async function prepareImage(file: File): Promise<{ dataUrl: string; base64: string }> {
-  const small = await imageCompression(file, {
-    maxSizeMB: 0.3,
-    maxWidthOrHeight: 1280,
-    fileType: "image/jpeg",
-    useWebWorker: true,
-  });
-  const dataUrl = await imageCompression.getDataUrlFromFile(small);
+  // Canvas resize: fast on iPhone (no web worker, no library). Max 1280px, JPEG ~0.8.
+  const bmp = await loadImage(file);
+  const scale = Math.min(1, 1280 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement("canvas");
+  c.width = Math.round(bmp.width * scale);
+  c.height = Math.round(bmp.height * scale);
+  c.getContext("2d")!.drawImage(bmp, 0, 0, c.width, c.height);
+  let q = 0.82;
+  let dataUrl = c.toDataURL("image/jpeg", q);
+  while (dataUrl.length > 400_000 && q > 0.45) dataUrl = c.toDataURL("image/jpeg", (q -= 0.12));
   return { dataUrl, base64: dataUrl.split(",")[1] };
 }
 
-/** MOCK: returns the image unchanged until P3 ships MediaPipe face blur. */
-export async function blurFaces(dataUrl: string): Promise<{ dataUrl: string; facesBlurred: number }> {
-  await wait(700);
-  return { dataUrl, facesBlurred: 0 };
+async function loadImage(file: File): Promise<ImageBitmap | HTMLImageElement> {
+  if ("createImageBitmap" in window) {
+    try {
+      return await createImageBitmap(file, { imageOrientation: "from-image" });
+    } catch {}
+  }
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    return img;
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 }
+
+/** P3's on-device MediaPipe blur, capped so the UI never hangs (model preloads on app start). */
+export async function blurFaces(dataUrl: string): Promise<{ dataUrl: string; facesBlurred: number }> {
+  const fallback = new Promise<{ dataUrl: string; facesBlurred: number }>((r) => setTimeout(() => r({ dataUrl, facesBlurred: -1 }), 3000));
+  return Promise.race([realBlur(dataUrl), fallback]);
+}
+export { preloadFaceDetector };
 
 // ---------- Routes ----------
 async function post<T>(path: string, body: unknown, mock: () => Promise<T>, headers: Record<string, string> = {}): Promise<T> {
@@ -191,7 +212,7 @@ function seed(): Issue[] {
   const base = { floor: null, description: null, after_photo_path: null, resolution_note: null, resolved_at: null, before_photo_path: null };
   return [
     { ...base, id: "demo-1", location_id: "leavey", floor: "2", category: "elevator_access", title: "Leavey elevator stuck on B level", description: "Doors won't open; sign says out of order.", priority: "high", status: "open", assigned_team: null, reporter_count: 4, created_at: ago(95), updated_at: ago(20) },
-    { ...base, id: "demo-2", location_id: "rth", floor: "1", category: "tech", title: "Lobby printer jammed", priority: "medium", status: "assigned", assigned_team: CATEGORIES.tech.team, reporter_count: 2, created_at: ago(300), updated_at: ago(60) },
+    { ...base, id: "demo-2", location_id: "ginsburg", floor: "1", category: "tech", title: "Lobby printer jammed", priority: "medium", status: "assigned", assigned_team: CATEGORIES.tech.team, reporter_count: 2, created_at: ago(300), updated_at: ago(60) },
     { ...base, id: "demo-3", location_id: "parkside", floor: "1", category: "broken_equipment", title: "Water fountain not working", priority: "low", status: "resolved", assigned_team: CATEGORIES.broken_equipment.team, reporter_count: 3, created_at: ago(1500), updated_at: ago(120), resolved_at: ago(120) },
   ];
 }

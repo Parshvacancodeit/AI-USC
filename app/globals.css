@@ -91,3 +91,52 @@ body {
 }
 
 .maplibregl-ctrl-attrib { font-size: 10px; }
+
+/* building tags */
+.bldg-tag {
+  border-radius: 9999px;
+  background: linear-gradient(180deg, #a50f17, #7a0000);
+  color: #fff;
+  font: 650 10px/1 var(--font-geist-sans), sans-serif;
+  padding: 5px 8px;
+  border: 1.5px solid rgba(255, 204, 0, 0.85);
+  box-shadow: 0 2px 10px rgba(122, 0, 0, 0.35);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* new pin drops in */
+@keyframes pin-drop {
+  0% { transform: translateY(-40px) scale(0.4); opacity: 0; }
+  60% { transform: translateY(4px) scale(1.1); opacity: 1; }
+  100% { transform: translateY(0) scale(1); }
+}
+.pin-drop .pin-dot { animation: pin-drop 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+
+/* ripple wave on new report / fix */
+.wave { width: 24px; height: 24px; pointer-events: none; }
+.wave::before, .wave::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 3px solid var(--c);
+  animation: wave 1.9s cubic-bezier(0.1, 0.6, 0.3, 1) forwards;
+}
+.wave::after { animation-delay: 0.35s; }
+@keyframes wave {
+  0% { transform: scale(0.5); opacity: 0.95; }
+  100% { transform: scale(9); opacity: 0; }
+}
+
+@keyframes fade-up {
+  from { transform: translateY(12px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.animate-fade-up { animation: fade-up 0.35s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+
+@keyframes live-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.live-dot { animation: live-dot 1.4s ease-in-out infinite; }
