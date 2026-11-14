@@ -2,6 +2,7 @@
 // Reads real issues (read-only). Admin actions are kept in this browser (localStorage) until the
 // backend from docs/ADMIN_BACKEND_REQUIREMENTS.md exists; then each action maps 1:1 to an API route.
 import { catInfo, getLocation } from "./campus";
+import { routeFor } from "./routing";
 import type { Category, Issue, Priority } from "./types";
 
 export type AdminStatus = Issue["status"] | "rejected";
@@ -108,7 +109,7 @@ export function merge(issues: Issue[], ov: Record<string, Overlay>): AdminIssue[
       after_photo: o.after_photo ?? null,
       notes: o.notes ?? [],
       events: [{ at: i.created_at, by: "Student", type: "created", text: `Reported by ${i.reporter_count} student${i.reporter_count > 1 ? "s" : ""}` } as AdminEvent, ...(o.events ?? [])],
-      office: o.assigned_team ?? i.assigned_team ?? catInfo(category).team,
+      office: o.assigned_team ?? i.assigned_team ?? routeFor(category, i.location_id, i.floor).office,
       locationLabel: `${loc?.name ?? "USC campus"}${i.floor ? ` · Floor ${i.floor}` : ""}`,
       lat: loc?.lat ?? null,
       lng: loc?.lng ?? null,

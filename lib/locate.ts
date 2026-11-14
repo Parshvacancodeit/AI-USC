@@ -1,12 +1,14 @@
-// P1. Turns a GPS point into a campus location: "Inside Leavey Library" or "40 m north of Doheny Library".
+// P1. GPS point → nearest named USC place. "At Leavey Library" (inside) or "Near Leavey Library" (outside).
+// The report is saved on that building (not a raw GPS point), so pins and duplicates group by building.
 import { USC_BUILDINGS, type Building } from "./usc-buildings";
 import type { Location } from "./types";
 
 export type Spot = {
-  kind: "inside" | "near" | "campus";
-  label: string; // human sentence for the UI
-  hint: string | null; // direction guide, e.g. "Southwest side · about 15 m"
-  location: Location; // what gets saved (a building, or a custom spot)
+  kind: "inside" | "near" | "off_campus";
+  label: string;
+  outside: boolean; // true when the photo was taken outdoors next to the building
+  distance: number; // meters from the building outline (0 inside)
+  location: Location;
   building: Building | null;
 };
 
@@ -23,7 +25,7 @@ function inside(lng: number, lat: number, ring: [number, number][]) {
   return c;
 }
 
-/** Meters from point to the building's outline. */
+/** Meters from point to a building outline. */
 function edgeDistance(lng: number, lat: number, ring: [number, number][]) {
   const kx = mPerDegLng(lat);
   let best = Infinity;
@@ -37,20 +39,15 @@ function edgeDistance(lng: number, lat: number, ring: [number, number][]) {
   return best;
 }
 
-const DIRS = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"];
-function direction(from: { lat: number; lng: number }, to: { lat: number; lng: number }) {
-  const dx = (to.lng - from.lng) * mPerDegLng(from.lat);
-  const dy = (to.lat - from.lat) * M_PER_DEG_LAT;
-  const deg = (Math.atan2(dx, dy) * 180) / Math.PI;
-  return DIRS[Math.round(((deg + 360) % 360) / 45) % 8];
-}
-
-const floorsOf = (b: Building) => (b.id === "leavey" ? ["B", "1", "2"] : Array.from({ length: b.levels || 3 }, (_, i) => String(i + 1)));
+const floorsOf = (b: Building) => (b.id === "leavey" ? ["B", "1", "2"] : b.kind === "outdoor" || b.kind === "athletic" ? [] : Array.from({ length: b.levels || 3 }, (_, i) => String(i + 1)));
+const toLocation = (b: Building): Location => ({ id: b.id, name: b.name, lat: b.lat, lng: b.lng, floors: floorsOf(b) });
 
 export function locate(lat: number, lng: number): Spot {
-  const hit = USC_BUILDINGS.find((b) => inside(lng, lat, b.ring));
-  if (hit) {
-    return { kind: "inside", label: `Inside ${hit.name}`, hint: null, building: hit, location: { id: hit.id, name: hit.name, lat: hit.lat, lng: hit.lng, floors: floorsOf(hit) } };
+  // Inside: prefer real buildings over open areas (a building inside a quad wins)
+  const hits = USC_BUILDINGS.filter((b) => inside(lng, lat, b.ring)).sort((a, b) => Number(a.kind === "outdoor") - Number(b.kind === "outdoor"));
+  if (hits[0]) {
+    const b = hits[0];
+    return { kind: "inside", label: `At ${b.name}`, outside: b.kind === "outdoor", distance: 0, building: b, location: toLocation(b) };
   }
   let near: Building | null = null;
   let d = Infinity;
@@ -61,13 +58,34 @@ export function locate(lat: number, lng: number): Spot {
       near = b;
     }
   }
-  const id = `spot-${Math.round(lat * 1e5)}-${Math.round(-lng * 1e5)}`;
-  if (near) {
-    const m = Math.max(5, Math.round(d / 5) * 5);
-    const side = direction(near, { lat, lng });
-    const hint = `${side[0].toUpperCase()}${side.slice(1)} side · about ${m} m from the building`;
-    const name = `Near ${near.name} (${side} side)`;
-    return { kind: "near", label: `Near ${near.name}`, hint, building: near, location: { id, name, lat, lng, floors: [] } };
+  if (!near || d > 300) {
+    return { kind: "off_campus", label: "Off campus", outside: true, distance: d, building: null, location: { id: "", name: "Off campus", lat, lng, floors: [] } };
   }
-  return { kind: "campus", label: "Outdoors on campus", hint: null, building: null, location: { id, name: "Outdoors on USC campus", lat, lng, floors: [] } };
+  return { kind: "near", label: `Near ${near.name}`, outside: true, distance: Math.round(d), building: near, location: toLocation(near) };
+}
+
+/** Best GPS fix within `ms`: listens to updates and keeps the most accurate one; stops early at <= `good` meters. */
+export function bestFix(ms = 5000, good = 12): Promise<{ lat: number; lng: number; accuracy: number } | null> {
+  return new Promise((resolve) => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) return resolve(null);
+    let best: { lat: number; lng: number; accuracy: number } | null = null;
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      navigator.geolocation.clearWatch(id);
+      clearTimeout(timer);
+      resolve(best);
+    };
+    const id = navigator.geolocation.watchPosition(
+      (p) => {
+        const fix = { lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy };
+        if (!best || fix.accuracy < best.accuracy) best = fix;
+        if (fix.accuracy <= good) finish();
+      },
+      () => finish(),
+      { enableHighAccuracy: true, maximumAge: 0, timeout: ms },
+    );
+    const timer = setTimeout(finish, ms);
+  });
 }

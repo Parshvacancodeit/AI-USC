@@ -7,7 +7,8 @@ import { CategoryIcon } from "@/components/Icon";
 const MapPicker = dynamic(() => import("@/components/MapPicker"), { ssr: false, loading: () => <div className="shimmer h-[46dvh] rounded-3xl" /> });
 import { haptic } from "@/lib/haptics";
 import { readPhotoGps } from "@/lib/exif-gps";
-import { locate, type Spot } from "@/lib/locate";
+import { bestFix, locate, type Spot } from "@/lib/locate";
+import { routeFor } from "@/lib/routing";
 import dynamic from "next/dynamic";
 import StepHeader from "@/components/StepHeader";
 import { ApiError, analyze, blurFaces, findDuplicates, preloadFaceDetector, prepareImage, submitReport } from "@/lib/api";
@@ -43,12 +44,13 @@ export default function ReportPage() {
   const [newType, setNewType] = useState<{ id: string; label: string } | null>(null);
   const [gpsNote, setGpsNote] = useState<string | null>(null);
   const [autoLoc, setAutoLoc] = useState(false);
-  const fix = useRef<Promise<{ lat: number; lng: number } | null> | null>(null);
+  const fix = useRef<Promise<{ lat: number; lng: number; accuracy?: number } | null> | null>(null);
   const detecting = useRef<Promise<Spot | null>>(Promise.resolve(null));
   const [floor, setFloor] = useState<string | null>(null);
   const [ai, setAi] = useState<AnalyzeResult | null>(null);
   const [aiFailed, setAiFailed] = useState(false);
-  const [form, setForm] = useState<Form>({ category: "broken_equipment", title: "", description: "", priority: "medium" });
+  const [form, setForm] = useState<Form>({ category: "", title: "", description: "", priority: "medium" });
+  const fallbackTitle = () => `${CATEGORIES[form.category].label} issue · ${spot?.label ?? loc?.name ?? "USC"}`;
   const [matches, setMatches] = useState<DuplicateMatch[]>([]);
   const [result, setResult] = useState<{ issueId: string; count: number; joined: boolean } | null>(null);
 
@@ -58,32 +60,27 @@ export default function ReportPage() {
 
   // Ask for the phone's position the moment the camera opens (runs while the photo is taken)
   function openCamera() {
-    fix.current ??= new Promise((resolve) => {
-      if (!navigator.geolocation) return resolve(null);
-      navigator.geolocation.getCurrentPosition(
-        (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
-        () => resolve(null),
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
-      );
-    });
+    fix.current ??= bestFix(6000, 12);
     fileRef.current?.click();
   }
 
-  /** Photo GPS first, then phone GPS → "Inside X" or "40 m north of X". Off campus → map picker. */
+  /** Photo GPS first, then the best phone GPS fix → nearest named USC building ("At X" / "Near X"). */
   async function detectBuilding(file: File): Promise<Spot | null> {
     const fromPhoto = await readPhotoGps(file);
-    const pos = fromPhoto ?? (await Promise.race([fix.current ?? Promise.resolve(null), new Promise<null>((r) => setTimeout(() => r(null), 6000))]));
+    const pos: { lat: number; lng: number; accuracy?: number } | null =
+      fromPhoto ?? (await Promise.race([fix.current ?? Promise.resolve(null), new Promise<null>((r) => setTimeout(() => r(null), 7000))]));
     if (!pos) return null;
     setGpsPos(pos);
-    const onCampus = pos.lat > 34.012 && pos.lat < 34.03 && pos.lng > -118.3 && pos.lng < -118.275;
-    if (!onCampus) {
-      setGpsNote("You seem to be off campus. Drop the pin where the problem is.");
+    const s = locate(pos.lat, pos.lng);
+    if (s.kind === "off_campus") {
+      setGpsNote("You seem to be off campus. Drop the pin on the building.");
       return null;
     }
-    const s = locate(pos.lat, pos.lng);
     setSpot(s);
+    setFloor(s.outside ? "Outside" : null);
     setAutoLoc(true);
-    setGpsNote(fromPhoto ? "From your photo's location" : "From your phone's location");
+    const acc = pos.accuracy ? ` · GPS ±${Math.round(pos.accuracy)} m` : "";
+    setGpsNote(`${fromPhoto ? "From your photo" : "From your location"}${acc}`);
     return s;
   }
 
@@ -179,7 +176,7 @@ export default function ReportPage() {
         ? await submitReport({ ...common, existingIssueId })
         : await submitReport({
             ...common,
-            newIssue: { locationId: loc.id, location: loc, categoryLabel: newType?.id === form.category ? newType.label : undefined, floor: floor ?? undefined, category: form.category, title: form.title.trim(), description: form.description.trim() || undefined, priority: form.priority },
+            newIssue: { locationId: loc.id, location: loc, categoryLabel: newType?.id === form.category ? newType.label : undefined, floor: floor ?? undefined, category: form.category, title: form.title.trim() || fallbackTitle(), description: form.description.trim() || undefined, priority: form.priority },
           });
       setResult({ issueId: out.issueId, count: out.reporterCount, joined: !!existingIssueId });
       haptic("success");
@@ -270,12 +267,12 @@ export default function ReportPage() {
             <Actions
               primary={{
                 label: "Use this spot",
-                disabled: !picked,
+                disabled: !picked || picked.kind === "off_campus",
                 onClick: () => {
                   if (!picked) return;
                   setSpot(picked);
                   setAutoLoc(false);
-                  setFloor(null);
+                  setFloor(picked.outside ? "Outside" : null);
                   toDetails(picked);
                 },
               }}
@@ -301,24 +298,24 @@ export default function ReportPage() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-semibold">{spot?.label ?? loc.name}</p>
-                        <p className="truncate text-xs text-muted">{spot?.hint ? `${spot.hint} · ` : ""}{autoLoc ? gpsNote : "Pinned on the map"}</p>
+                        <p className="truncate text-xs text-muted">{autoLoc ? gpsNote : "Pinned on the map"}</p>
                       </div>
                       <button onClick={() => { haptic(); toLocation(); }} className="h-9 rounded-full bg-surface-2 px-3 text-xs font-semibold text-accent">
                         Adjust
                       </button>
                     </div>
-                    {loc.floors.length > 0 && <div className="mt-3 flex items-center gap-1.5 overflow-x-auto">
-                      <span className="mr-1 text-xs font-semibold text-muted">Floor</span>
-                      {loc.floors.map((f) => (
+                    {<div className="mt-3 flex items-center gap-1.5 overflow-x-auto">
+                      <span className="mr-1 text-xs font-semibold text-muted">Where</span>
+                      {["Outside", ...loc.floors].map((f) => (
                         <button key={f} onClick={() => { haptic(); setFloor(floor === f ? null : f); }} className={`h-9 min-w-9 shrink-0 rounded-lg px-3 text-sm font-semibold transition ${floor === f ? "bg-cardinal text-white" : "bg-surface-2"}`}>
-                          {f}
+                          {f === "Outside" ? f : f === "B" ? "Basement" : `Floor ${f}`}
                         </button>
                       ))}
                     </div>}
                   </div>
                 )}
                 {aiFailed ? (
-                  <p className="rounded-xl bg-gold/15 p-3 text-gold text-sm">AI couldn&apos;t tell what&apos;s wrong. Pick a category and add a short title.</p>
+                  <p className="rounded-xl bg-gold/15 p-3 text-gold text-sm">AI is off or unsure. Pick a problem type; the title is optional.</p>
                 ) : (
                   <p className="flex items-center gap-2 text-sm text-muted">
                     <span className="flex items-center gap-1 rounded-full bg-cardinal px-2 py-0.5 text-[11px] font-semibold text-white"><Sparkles size={11} /> AI</span>
@@ -341,7 +338,7 @@ export default function ReportPage() {
                   </div>
                 </Field>
                 <Field label="Title">
-                  <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Elevator out of service" maxLength={80} className="h-12 w-full rounded-xl bg-surface px-3 text-[15px] outline-none focus:ring-2 focus:ring-cardinal" />
+                  <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Optional, e.g. Elevator out of service" maxLength={80} className="h-12 w-full rounded-xl bg-surface px-3 text-[15px] outline-none focus:ring-2 focus:ring-cardinal" />
                 </Field>
                 <Field label="Details (optional)">
                   <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} className="w-full rounded-xl bg-surface p-3 text-[15px] outline-none focus:ring-2 focus:ring-cardinal" />
@@ -355,8 +352,16 @@ export default function ReportPage() {
                     ))}
                   </div>
                 </Field>
-                <p className="text-xs text-muted">→ Goes to <b>{CATEGORIES[form.category].team}</b></p>
-                <Actions primary={{ label: "Continue", onClick: toDuplicate, disabled: form.title.trim().length < 3 }} />
+                {form.category ? (
+                  <div className="rounded-xl bg-surface p-3 text-xs">
+                    <p className="text-muted">Goes to</p>
+                    <p className="text-[14px] font-semibold">{routeFor(form.category, loc?.id ?? "", floor).office}</p>
+                    <p className="mt-0.5 text-muted">{routeFor(form.category, loc?.id ?? "", floor).why}</p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted">Pick a problem type so it reaches the right office.</p>
+                )}
+                <Actions primary={{ label: "Continue", onClick: toDuplicate, disabled: !form.category }} />
               </>
             )}
           </div>
@@ -421,7 +426,7 @@ export default function ReportPage() {
             </p>
             <div className="w-full rounded-2xl bg-surface p-4 text-left text-sm">
               <p className="text-muted">Routed to</p>
-              <p className="font-semibold">{CATEGORIES[form.category].team}</p>
+              <p className="font-semibold">{routeFor(form.category, loc?.id ?? "", floor).office}</p>
             </div>
             <div className="w-full space-y-2">
               <Link href="/" className="flex h-14 items-center justify-center rounded-2xl bg-cardinal text-[17px] font-semibold text-white">

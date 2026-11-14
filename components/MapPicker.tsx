@@ -34,12 +34,12 @@ export default function MapPicker({ start, onChange }: { start?: { lat: number; 
     const update = () => {
       const c = m.getCenter();
       const s = locate(c.lat, c.lng);
-      setLabel(s.hint ? `${s.label} · ${s.hint.split(" · ")[0]}` : s.label);
+      setLabel(s.label);
       setMoving(false);
       (m.getSource("hit") as maplibregl.GeoJSONSource | undefined)?.setData(
-        s.kind === "inside" && s.building ? { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [s.building.ring] } } : EMPTY,
+        s.building ? { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [s.building.ring] } } : EMPTY,
       );
-      if (s.label !== last) haptic();
+      if (s.label !== last && last) haptic();
       last = s.label;
       cb.current(s);
     };

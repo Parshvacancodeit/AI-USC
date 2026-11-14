@@ -52,6 +52,7 @@ import {
   type RejectReason,
 } from "@/lib/admin";
 import { setTheme, useTheme } from "@/lib/theme";
+import { OFFICE, routeFor } from "@/lib/routing";
 import type { Issue, Priority } from "@/lib/types";
 
 type View = "overview" | "queue" | "buildings" | "activity" | "settings";
@@ -77,7 +78,7 @@ const REJECT: Record<RejectReason, string> = {
   inappropriate: "Inappropriate content",
   outside_scope: "Outside USC's responsibility",
 };
-const OFFICES = ["Facilities — Elevators & Accessibility", "Facilities — Maintenance", "Facilities — Grounds", "Custodial Services", "ITS", "USC Housing", "USC Hospitality", "Transportation", "Ripple triage (USG)"];
+const OFFICES: string[] = Object.values(OFFICE);
 
 export default function AdminPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -424,7 +425,7 @@ function SettingsView({ list }: { list: AdminIssue[] }) {
           </button>
         </div>
       </Card>
-      <Card title="Routing" sub="Problem type → office. Editing needs the backend.">
+      <Card title="Routing" sub="Default office per problem type. Place rules override it (residence → Housing, outdoor trash → Waste, parking → Transportation…). See docs/ROUTING.md.">
         {categoryIds().map((c, n) => (
           <div key={c} className={`flex items-center gap-3 px-3 py-2.5 ${n ? "border-t hairline" : ""}`}>
             <div className="grid h-8 w-8 place-items-center rounded-lg bg-surface-2 text-accent">
@@ -515,7 +516,7 @@ function Drawer({ issue: i, all, onClose }: { issue: AdminIssue; all: AdminIssue
             <Fact label="Problem type">
               <Select
                 value={i.category}
-                onChange={(c) => set({ category: c, assigned_team: catInfo(c).team }, `Re-routed to ${catInfo(c).label} (${catInfo(c).team})`, "rerouted")}
+                onChange={(c) => set({ category: c, assigned_team: routeFor(c, i.location_id, i.floor).office }, `Re-routed to ${catInfo(c).label} (${routeFor(c, i.location_id, i.floor).office})`, "rerouted")}
                 options={[...new Set([i.category, ...categoryIds()])].map((c) => [c, catInfo(c).label])}
               />
             </Fact>
