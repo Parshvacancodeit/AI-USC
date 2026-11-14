@@ -1,5 +1,7 @@
 // P3 — server only. Claude vision calls for README §9 (analyze, duplicate match, verify fix).
 // Structured output via a forced tool call (the tool's input_schema = our JSON contract).
+// Categories are dynamic: the list comes from the DB `routing` table (see loadCategories in
+// lib/ai-storage.ts); a new routing row = a new category, no code change.
 // Every function throws AIUnavailableError on any failure; routes turn it into 502 / [] so
 // the client falls back. AI never blocks a report.
 import Anthropic from "@anthropic-ai/sdk";
@@ -7,7 +9,30 @@ import type { AnalyzeResult, Category, Priority } from "./types";
 
 export class AIUnavailableError extends Error {}
 
-const CATEGORIES: Category[] = ["elevator_access", "broken_equipment", "tech"];
+// ---------- Categories (dynamic) ----------
+export type CategoryDef = { id: string; label: string; description: string };
+
+/** Built-in labels/descriptions for known ids, used when the routing row has no label/description yet. */
+const KNOWN: Record<string, { label: string; description: string }> = {
+  elevator_access: { label: "Elevator / accessibility", description: "elevators, ramps, automatic doors, blocked accessible paths" },
+  broken_equipment: { label: "Broken equipment", description: "lights, doors, furniture, water fountains, restrooms, leaks" },
+  tech: { label: "Tech", description: "printers, Wi-Fi, screens/projectors, charging stations" },
+  grounds: { label: "Grounds & outdoor", description: "bike racks, pavement and broken bricks, benches, outdoor lighting, landscaping, irrigation" },
+  cleanliness: { label: "Trash & cleanliness", description: "overflowing trash or recycling bins, litter, spills, graffiti, pests" },
+  other: { label: "Other", description: "any other campus facilities problem that fits no other category" },
+};
+/** Used when Supabase is unavailable. */
+export const DEFAULT_CATEGORIES: CategoryDef[] = ["elevator_access", "broken_equipment", "tech"].map((id) => ({ id, ...KNOWN[id] }));
+
+const humanize = (id: string) => id.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+/** Build a CategoryDef from a routing row (label/description columns are optional). */
+export function categoryDef(row: { category: string; label?: string | null; description?: string | null }): CategoryDef {
+  const k = KNOWN[row.category];
+  const label = row.label?.trim() || k?.label || humanize(row.category);
+  return { id: row.category, label, description: row.description?.trim() || k?.description || label };
+}
+const slug = (v: unknown) => String(v ?? "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40);
+
 const PRIORITIES: Priority[] = ["low", "medium", "high", "urgent"];
 // Routes have maxDuration = 30 s. 12 s per attempt × (1 try + 1 retry) + backoff stays under it,
 // so a slow Claude call ends as our clean 502 / [] fallback instead of a Vercel 504.
@@ -63,33 +88,44 @@ const clamp01 = (n: unknown) => Math.max(0, Math.min(1, Number(n) || 0));
 const str = (v: unknown, max: number) => String(v ?? "").slice(0, max);
 
 // ---------- Prompt 1: Analyze ----------
-const ANALYZE_SCHEMA = {
-  type: "object",
-  properties: {
-    is_issue: { type: "boolean" },
-    category: { type: "string", enum: CATEGORIES },
-    title: { type: "string" },
-    description: { type: "string" },
-    priority: { type: "string", enum: PRIORITIES },
-    confidence: { type: "number" },
-  },
-  required: ["is_issue", "category", "title", "description", "priority", "confidence"],
-};
+export type AnalyzeOutput = AnalyzeResult & { suggested_new_category: { id: string; label: string } | null };
 
-export async function analyzePhoto(a: { imageBase64: string; locationName: string; floor?: string; note?: string }): Promise<AnalyzeResult> {
+function analyzeSchema(ids: string[]) {
+  return {
+    type: "object",
+    properties: {
+      is_issue: { type: "boolean" },
+      category: { type: "string", enum: ids },
+      title: { type: "string" },
+      description: { type: "string" },
+      priority: { type: "string", enum: PRIORITIES },
+      confidence: { type: "number" },
+      new_category_id: { type: "string", description: "Only if no category fits well: short snake_case id for a new category. Otherwise empty string." },
+      new_category_label: { type: "string", description: "Only if no category fits well: 1-3 word human label. Otherwise empty string." },
+    },
+    required: ["is_issue", "category", "title", "description", "priority", "confidence", "new_category_id", "new_category_label"],
+  };
+}
+
+export async function analyzePhoto(a: {
+  imageBase64: string; locationName: string; floor?: string; note?: string; categories?: CategoryDef[];
+}): Promise<AnalyzeOutput> {
+  const cats = a.categories?.length ? a.categories : DEFAULT_CATEGORIES;
+  const ids = cats.map((c) => c.id);
+  const fallbackId = ids.includes("other") ? "other" : null;
   const prompt = `You are triaging a photo that a USC student took of a campus facilities problem.
 Location: ${a.locationName}, floor ${a.floor || "unknown"}. Student note: ${a.note || "none"}.
 
 Decide whether the photo shows a campus facilities problem. If it does not
-(e.g. a selfie, food, a random object), set is_issue to false.
+(e.g. a selfie, food, a random object, or everything looks normal), set is_issue to false.
 
 Choose exactly one category:
-- elevator_access: elevators, ramps, automatic doors, blocked accessible paths
-- broken_equipment: lights, doors, furniture, water fountains, restrooms, leaks
-- tech: printers, Wi-Fi, screens/projectors, charging stations
+${cats.map((c) => `- ${c.id}: ${c.description}`).join("\n")}
+If no category fits well, choose ${fallbackId ? `"${fallbackId}"` : "the closest one"} AND propose a new category in
+new_category_id (snake_case) and new_category_label. If one fits, leave both empty.
 
 Priority:
-- urgent: safety hazard, or blocks access for wheelchair users
+- urgent: safety hazard (e.g. trip hazard, exposed wiring, flooding), or blocks access for wheelchair users
 - high: blocks use of a shared space or service
 - medium: degraded but still usable
 - low: cosmetic
@@ -97,17 +133,22 @@ Priority:
 Write a title of at most 8 words and a description of at most 2 sentences.
 Describe only what is visible. Never describe or identify people.
 Set confidence between 0 and 1.`;
-  const o = await callJson<AnalyzeResult>([img(a.imageBase64), txt(prompt)], "report_triage", ANALYZE_SCHEMA);
-  if (!CATEGORIES.includes(o.category) || !PRIORITIES.includes(o.priority)) {
+  const o = await callJson<AnalyzeResult & { new_category_id?: string; new_category_label?: string }>(
+    [img(a.imageBase64), txt(prompt)], "report_triage", analyzeSchema(ids));
+  if (!ids.includes(o.category) || !PRIORITIES.includes(o.priority)) {
     throw new AIUnavailableError("unexpected category/priority");
   }
+  const newId = slug(o.new_category_id);
   return {
     is_issue: Boolean(o.is_issue),
-    category: o.category,
+    category: o.category as Category,
     title: str(o.title, 80),
     description: str(o.description, 400),
     priority: o.priority,
     confidence: clamp01(o.confidence),
+    suggested_new_category: newId && !ids.includes(newId)
+      ? { id: newId, label: str(o.new_category_label, 40).trim() || humanize(newId) }
+      : null,
   };
 }
 
@@ -191,7 +232,9 @@ export type WorkOrderInput = {
   floor: string | null;
   title: string;
   description: string | null;
-  category: Category;
+  category: string;
+  categoryLabel: string;
+  categoryDescription: string;
   priority: Priority;
   reporterCount: number;
   createdAt: string; // ISO
@@ -210,11 +253,9 @@ const WORK_ORDER_SCHEMA = {
   required: ["subject", "body", "urgency_note"],
 };
 
-const CATEGORY_LABEL: Record<Category, string> = {
-  elevator_access: "Elevator / accessibility",
-  broken_equipment: "Broken equipment",
-  tech: "Tech",
-};
+/** Accessibility line for elevator/accessibility-type categories (works for future categories too). */
+const isAccess = (w: WorkOrderInput) =>
+  w.category === "elevator_access" || /accessib|wheelchair|ramp|elevator/i.test(`${w.categoryLabel} ${w.categoryDescription}`);
 
 /** "Sat, Nov 14, 12:40 PM" in campus time. */
 export function formatReportedAt(iso: string): string {
@@ -229,16 +270,24 @@ export function formatReportedAt(iso: string): string {
 const where = (w: WorkOrderInput) => `${w.locationName}${w.floor ? `, floor ${w.floor}` : ""}`;
 const students = (n: number) => `${n} student${n === 1 ? "" : "s"}`;
 
-/** Collapse whitespace, drop markdown symbols, cap at `max` words. */
-function plain(text: string, max: number): string {
-  const words = text.replace(/[*_#`>]+/g, "").replace(/\s+/g, " ").trim().split(" ");
-  return words.length > max ? words.slice(0, max).join(" ").replace(/[,;:]$/, "") + "…" : words.join(" ");
+/** Plain text: drop markdown symbols, tidy whitespace (keeping paragraph breaks if keepLines), cap at `max` words. */
+function plain(text: string, max: number, keepLines = false): string {
+  let t = text.replace(/^[ \t]*(#{1,6}|>|[-*•]|\d+\.)[ \t]+/gm, "").replace(/[*_`]+/g, "");
+  t = keepLines
+    ? t.replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n").replace(/\n{3,}/g, "\n\n").trim()
+    : t.replace(/\s+/g, " ").trim();
+  let n = 0;
+  const parts = t.split(/(\s+)/);
+  for (let i = 0; i < parts.length; i++) {
+    if (parts[i].trim() && ++n > max) return parts.slice(0, i).join("").trimEnd().replace(/[,;:]$/, "") + "…";
+  }
+  return t;
 }
 
 /** No-AI fallback with the same fields. */
 export function templateWorkOrder(w: WorkOrderInput): WorkOrder {
   const title = w.title.trim().replace(/[.!?\s]+$/, "");
-  const access = w.category === "elevator_access"
+  const access = isAccess(w)
     ? " Accessibility impact: students who use wheelchairs or cannot take stairs may be unable to reach this area."
     : "";
   const urgency: Record<Priority, string> = {
@@ -250,12 +299,13 @@ export function templateWorkOrder(w: WorkOrderInput): WorkOrder {
   return {
     subject: `[${w.priority.toUpperCase()}] ${title} — ${where(w)}`.slice(0, 120),
     body: plain(
-      `Hello ${w.teamName}, ` +
-        `Location: ${where(w)}. Issue: ${title}.${w.description ? ` ${w.description}` : ""} ` +
+      `Hello ${w.teamName},\n\n` +
+        `Location: ${where(w)}. Issue: ${title}.${w.description ? ` ${w.description}` : ""}\n` +
         `Confirmed by ${students(w.reporterCount)} since ${formatReportedAt(w.createdAt)}. ` +
-        `Category: ${CATEGORY_LABEL[w.category]}. Priority: ${w.priority}.${access} ` +
+        `Category: ${w.categoryLabel}. Priority: ${w.priority}.${access}\n\n` +
         `Reported via Ripple. Thank you.`,
       120,
+      true,
     ),
     urgency_note: urgency[w.priority],
   };
@@ -268,7 +318,7 @@ export async function writeWorkOrder(w: WorkOrderInput): Promise<WorkOrder> {
 Facts (use only these; do not invent details):
 - Location: ${where(w)}
 - Problem: ${w.title}${w.description ? ` — ${w.description}` : ""}
-- Category: ${CATEGORY_LABEL[w.category]}
+- Category: ${w.categoryLabel}
 - Priority: ${w.priority}
 - Confirmed by ${students(w.reporterCount)}, first reported ${formatReportedAt(w.createdAt)} (Pacific time)
 - Current status: ${w.status}
@@ -280,13 +330,13 @@ ${notes.length ? notes.map((n) => `- ${n}`).join("\n") : "(none)"}
 
 Rules:
 - Include the location and floor, what is wrong, how many students confirmed it and since when, and the priority.
-${w.category === "elevator_access" ? "- Include one line on the accessibility impact (e.g. wheelchair users or people who cannot use stairs).\n" : ""}- Do not name, quote or describe any person. Do not mention photos of people.
-- body: at most 120 words, plain text, no markdown, no bullet symbols, no signature placeholders.
+${isAccess(w) ? "- Include one line on the accessibility impact (e.g. wheelchair users or people who cannot use stairs).\n" : ""}- Do not name, quote or describe any person. Do not mention photos of people.
+- body: at most 120 words, plain text with short paragraphs separated by blank lines; no markdown, no bullet symbols, no signature placeholders.
 - subject: one line, at most 12 words, starting with the priority in brackets, e.g. [HIGH].
 - urgency_note: one sentence on how soon this needs attention, based on the priority.`;
   const o = await callJson<WorkOrder>([txt(prompt)], "work_order", WORK_ORDER_SCHEMA);
   const subject = plain(str(o.subject, 200), 16);
-  const body = plain(str(o.body, 1500), 120);
+  const body = plain(str(o.body, 1500), 120, true);
   if (!subject || !body) throw new AIUnavailableError("empty work order");
   return { subject, body, urgency_note: plain(str(o.urgency_note, 300), 40) };
 }

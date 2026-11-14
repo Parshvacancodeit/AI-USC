@@ -148,11 +148,21 @@ supabase/
 
 **Verify real USC office names before the demo.** USG judges will notice invented offices.
 
-| category | Covers | Routed to (placeholder, verify) |
-|---|---|---|
-| `elevator_access` | Elevators, ramps, automatic doors, blocked accessible paths | Facilities: Elevators & Accessibility |
-| `broken_equipment` | Lights, doors, furniture, water fountains, restrooms, leaks | Facilities: Maintenance |
-| `tech` | Printers, Wi-Fi, screens/projectors, charging stations | ITS |
+**Categories are dynamic.** The source of truth is the `routing` table: one row per category
+(`category` id, `label`, `description`, `team_name`, `team_email`). Adding a row adds a category everywhere
+(AI prompt, report form, map filters, routing); no code change. The AI may also propose a new category
+(`suggested_new_category` in `/api/analyze`); an admin decides whether to add it as a row.
+
+Starting set (placeholder offices, verify):
+
+| category | label | Covers (`description`) | Routed to (placeholder, verify) |
+|---|---|---|---|
+| `elevator_access` | Elevator / accessibility | Elevators, ramps, automatic doors, blocked accessible paths | Facilities: Elevators & Accessibility |
+| `broken_equipment` | Broken equipment | Lights, doors, furniture, water fountains, restrooms, leaks | Facilities: Maintenance |
+| `tech` | Tech | Printers, Wi-Fi, screens/projectors, charging stations | ITS |
+| `grounds` | Grounds & outdoor | Bike racks, pavement and broken bricks, benches, outdoor lighting, landscaping, irrigation | Facilities: Grounds |
+| `cleanliness` | Trash & cleanliness | Overflowing trash or recycling bins, litter, spills, graffiti, pests | Facilities: Custodial |
+| `other` | Other | Any other campus facilities problem | Facilities: Customer Service |
 
 Status: `open` (red) → `assigned` (amber) → `resolved` (green).
 
@@ -295,8 +305,9 @@ JSON bodies. Images are base64 **after** compression and face blur (no `data:` p
 // req
 { imageBase64: string; mimeType: "image/jpeg"; locationName: string; floor?: string; note?: string }
 // 200
-{ is_issue: boolean; category: "elevator_access" | "broken_equipment" | "tech";
-  title: string; description: string; priority: "low" | "medium" | "high" | "urgent"; confidence: number }
+{ is_issue: boolean; category: string;   // one of the routing.category ids
+  title: string; description: string; priority: "low" | "medium" | "high" | "urgent"; confidence: number;
+  suggested_new_category: { id: string; label: string } | null }  // set only when no category fit well
 // 502 on AI failure → client shows manual form
 { error: string }
 ```
@@ -354,12 +365,12 @@ Decide whether the photo shows a campus facilities problem. If it does not
 (e.g. a selfie, food, a random object), set is_issue to false.
 
 Choose exactly one category:
-- elevator_access: elevators, ramps, automatic doors, blocked accessible paths
-- broken_equipment: lights, doors, furniture, water fountains, restrooms, leaks
-- tech: printers, Wi-Fi, screens/projectors, charging stations
+- {category}: {description}        ← one line per routing row, built at request time
+If no category fits well, choose "other" (or the closest one) AND propose a new category in
+new_category_id (snake_case) and new_category_label. If one fits, leave both empty.
 
 Priority:
-- urgent: safety hazard, or blocks access for wheelchair users
+- urgent: safety hazard (e.g. trip hazard, exposed wiring, flooding), or blocks access for wheelchair users
 - high: blocks use of a shared space or service
 - medium: degraded but still usable
 - low: cosmetic
@@ -369,18 +380,19 @@ Describe only what is visible. Never describe or identify people.
 Set confidence between 0 and 1.
 ```
 ```ts
-const ANALYZE_SCHEMA = {
-  type: Type.OBJECT,
+// tool input_schema (lib/ai.ts → analyzeSchema(ids))
+{
+  type: "object",
   properties: {
-    is_issue:    { type: Type.BOOLEAN },
-    category:    { type: Type.STRING, enum: ["elevator_access", "broken_equipment", "tech"] },
-    title:       { type: Type.STRING },
-    description: { type: Type.STRING },
-    priority:    { type: Type.STRING, enum: ["low", "medium", "high", "urgent"] },
-    confidence:  { type: Type.NUMBER },
+    is_issue: { type: "boolean" },
+    category: { type: "string", enum: /* routing.category ids */ [] },
+    title: { type: "string" }, description: { type: "string" },
+    priority: { type: "string", enum: ["low", "medium", "high", "urgent"] },
+    confidence: { type: "number" },
+    new_category_id: { type: "string" }, new_category_label: { type: "string" },
   },
-  required: ["is_issue", "category", "title", "description", "priority", "confidence"],
-};
+  required: [/* all of the above */],
+}
 ```
 
 ### Prompt 2 — Duplicate match

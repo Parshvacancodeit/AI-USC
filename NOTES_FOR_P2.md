@@ -24,3 +24,4 @@ Checked read-only on Sat Nov 14 by P3. Tables, columns, routing rows and both pu
 
 ## Admin side
 - See `NOTES_FOR_ADMIN.md`: `/admin` page, `/api/admin/assign` and `/api/admin/resolve` are not built yet, plus how to wire the P3 AI routes into the dashboard.
+- Categories are now dynamic (routing table). See `NOTES_FOR_CATEGORIES.md` for the SQL + `/api/reports` + types changes.

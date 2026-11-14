@@ -2,9 +2,10 @@
 // Drafts a work order for the office that owns the issue's category. Claude writes it; if Claude
 // is unavailable we return the same fields from a plain template with ai: false. Never 500s because of AI.
 import { NextResponse } from "next/server";
-import { templateWorkOrder, writeWorkOrder, type WorkOrder, type WorkOrderInput } from "@/lib/ai";
+import { categoryDef, templateWorkOrder, writeWorkOrder, type WorkOrder, type WorkOrderInput } from "@/lib/ai";
+import { loadCategories } from "@/lib/ai-storage";
 import { supabaseAdmin } from "@/lib/supabase-server";
-import type { Category, Priority } from "@/lib/types";
+import type { Priority } from "@/lib/types";
 
 export const maxDuration = 30;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -37,9 +38,10 @@ export async function POST(req: Request) {
     if (error) throw error;
     if (!issue) return NextResponse.json({ error: "issue not found" }, { status: 404 });
 
-    const [reports, routing] = await Promise.all([
+    const [reports, routing, categories] = await Promise.all([
       db.from("reports").select("note").eq("issue_id", issue.id).order("created_at", { ascending: false }).limit(10),
       db.from("routing").select("team_name, team_email").eq("category", issue.category).maybeSingle(),
+      loadCategories(),
     ]);
     if (reports.error) throw reports.error;
     if (routing.error) throw routing.error;
@@ -47,13 +49,16 @@ export async function POST(req: Request) {
     const loc = issue.locations as unknown as { name: string } | { name: string }[] | null;
     const locationName = (Array.isArray(loc) ? loc[0]?.name : loc?.name) ?? "Unknown building";
     to = routing.data?.team_email ?? null;
+    const cat = categories.find((c) => c.id === issue.category) ?? categoryDef({ category: issue.category });
     input = {
       teamName: routing.data?.team_name ?? "Facilities",
       locationName,
       floor: issue.floor,
       title: issue.title,
       description: issue.description,
-      category: issue.category as Category,
+      category: issue.category,
+      categoryLabel: cat.label,
+      categoryDescription: cat.description,
       priority: issue.priority as Priority,
       reporterCount: issue.reporter_count,
       createdAt: issue.created_at,
