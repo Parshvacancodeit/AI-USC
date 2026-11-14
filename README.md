@@ -133,7 +133,9 @@ No. One report already reaches the right office. More users add confirmations an
 
 ## Tech at a glance
 
-Next.js (TypeScript, Tailwind) · Supabase (Postgres, Realtime, Storage, anonymous auth) · Gemini Flash for vision · MediaPipe face detection in the browser · MapLibre GL + OpenFreeMap. Full details in [`CLAUDE.md`](CLAUDE.md).
+**Built on Replit:** Replit Deployments (hosting), Replit Database (PostgreSQL), Replit App Storage (photos), Replit Secrets (keys), Replit Agent (scaffolding).
+
+Also: Next.js (TypeScript, Tailwind) · Gemini Flash for vision · MediaPipe face detection in the browser · MapLibre GL + OpenFreeMap. Full details in [`CLAUDE.md`](CLAUDE.md).
 
 ---
 
