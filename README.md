@@ -1,148 +1,531 @@
-# Ripple: the campus that helps itself
+# Ripple — 24-hour build plan
 
-> Snap it. We route it. You see it fixed.
->
-> Built at the **AI@USC Hackathon** (HackSC x USC AI Committee), Nov 14–15, 2026. *For Trojans, by Trojans.*
+**AI@USC Hackathon, Nov 14–15, 2026.** This is the only plan. If you change a shared contract (schema, API, types), update this file and tell the team.
 
-Ripple is a live campus map powered by student observations. Students photograph problems, confirm what others already reported, and get notified when the issue is fixed. Reports go to the office that already owns the problem, so USC doesn't have to change any system.
-
-**This README is the product overview: what Ripple is, why it matters, and how it would be adopted.**
-**The build spec (scope, schema, API contracts, AI prompts, team ownership, timeline) is [`CLAUDE.md`](CLAUDE.md). If the two ever disagree, `CLAUDE.md` wins.**
+**Ripple:** students photograph a campus problem, confirm what others already reported, the right team fixes it, and everyone who reported it gets "Fixed."
 
 ---
 
-## The problem
+## 1. Deadlines and rules
 
-USC runs on 5+ offices and portals: Facilities, Housing, IT, Hospitality, Transportation. Students don't know where to report things, the same problem gets reported many times or not at all, and nobody can see what's broken right now.
-
-| What happened | Source |
+| When (PT) | What |
 |---|---|
-| Parkside ran on **one elevator for about 3 months** (Spring 2024), stranding residents with disabilities | [Daily Trojan](https://dailytrojan.com/?p=207328) |
-| The University Religious Center has no elevator; a student on crutches nearly fell (Mar 2026) | [Daily Trojan](https://dailytrojan.com/2026/03/11/stairway-to-faith-and-community-roadblock-for-students/) |
-| Students "fight for seats" in Leavey at midterms and finals | [Daily Trojan](https://dailytrojan.com/2024/04/09/extend-operating-hours-during-finals/) |
-| Dining hall complaints (dirty plates, bugs) surface only through news stories | [Annenberg Media](https://www.uscannenbergmedia.com/2026/04/20/usc-students-report-dirty-plates-bugs-and-bad-cake-in-dining-halls/) |
-| About 1,000 staff layoffs mean offices are stretched; anything that cuts their workload is attractive | [Daily Trojan](https://dailytrojan.com/2026/05/01/layoffs-delay-dornsife-viterbi-student-registration/) |
+| Sun **2:00 AM** | Feature freeze: bug fixes, phone testing, seed data, demo prep only |
+| Sun **9:00 AM** | Participant check-in deadline |
+| Sun **10:30 AM** | **We submit** (Devpost deadline is 11:00 AM) |
+| Sun 11 AM–2 PM | First-round judging; top 10 pitch 3:00–4:30 PM (3 min max) |
 
-**The gap isn't a missing office.** It's the missing link between the students who see a problem and the people who can fix it.
+**Devpost needs:** description (problem, solution, tech stack, challenges, future goals) · prototype link · demo video ≤ 3 min · slide deck · ≥ 1 screenshot · all teammates added.
 
----
+**Rules:**
+1. All code and assets are created during Nov 14–15. Open-source libraries and public APIs are fine. No code from earlier projects.
+2. **AI never blocks a report.** If Gemini fails or times out, the student picks the category manually.
+3. **Everything runs on Replit** (we're going for Best Use of Replit).
+4. **Secrets only in Replit Secrets.** Never in the repo or chat.
+5. Anything mocked is labeled in the UI (e.g. "Demo office dashboard").
 
-## The solution: one loop
-
-**Report → AI description → duplicate confirmation → team assignment → after-photo resolution → notification**
-
-| Step | What happens |
-|---|---|
-| **1. Report** | A student takes a photo. Faces are blurred **on the phone** before upload. GPS suggests the nearest building; the student confirms building and floor. |
-| **2. AI description** | AI suggests a title, category, description and priority. The student can edit everything. If the AI fails, the student picks the category by hand. **AI never blocks a report.** |
-| **3. Duplicate confirmation** | If an open issue looks like the same problem, the student sees it and taps **"Yes, same issue"** or **"No, it's new."** Same issue → the reporter count goes up. |
-| **4. Team assignment** | The issue is routed to the team that owns that category and appears on the office dashboard. |
-| **5. After-photo resolution** | The office uploads an "after" photo. AI compares before and after; the office confirms. AI is advisory, people decide. |
-| **6. Notification** | Everyone who reported it gets **"Fixed"** live in the app. |
-
-**Why ChatGPT or Gemini can't replace it:** Ripple's data doesn't exist anywhere until a student creates it. No chatbot can know that an elevator is broken right now, how many students saw it, or whether it was actually fixed.
+**Judging:** Impact 30% · Technical & AI 25% · Feasibility 25% · UX 20%.
 
 ---
 
-## How it helps students
+## 2. What we build
 
-1. **Your report reaches the right office.** No need to know which of five portals to use.
-2. **Your complaint counts.** One email gets ignored; one issue with 20 confirmations does not.
-3. **Accessibility.** Elevator and ramp issues are high priority by default.
-4. **You see that it mattered.** Every reporter is notified when it's fixed, with the after photo.
-5. **Know before you go.** The live map shows what's broken right now.
+### The one loop that must work
+**Report → AI description → duplicate confirmation → team assignment → after-photo resolution → "Fixed" notification**
+
+**Done means:** two phones report the same problem → both join one issue (reporter count = 2) → admin assigns it → admin uploads an after photo, AI checks it, admin confirms → **both phones show "Fixed"**. Works repeatedly on the deployed Replit URL.
+
+**Coverage:** 3 categories (§5) · 3–5 seeded campus locations.
+
+### In scope
+- Photo capture with on-device face blur + preview
+- Location: nearest seeded building from GPS; student confirms building and floor
+- AI suggests title, category, description, priority; student can edit
+- Duplicate suggestion; student taps "Same issue" or "New issue"
+- Live map with status colors and reporter counts
+- Demo office dashboard (labeled "Demo") with category-based assignment
+- Before/after AI check; admin confirms resolution
+- In-app "Fixed" notification while the app is open
+
+### Out of scope (do not build)
+3D buildings · login/SSO · push notifications · manual redaction tool · model training · native app · state libraries · Ask / Help / Lost & Found / Lantern (roadmap slide only, unless §12 gate is met)
 
 ---
 
-## Categories and routing
+## 3. Tech stack
 
-Three categories for the hackathon. **Office names are placeholders and must be verified before the demo** (USG judges will notice invented offices).
+| Layer | Choice | Notes |
+|---|---|---|
+| Framework | Next.js (App Router) + TypeScript + Tailwind | UI and API routes in one app |
+| Hosting | **Replit Deployments** (Autoscale) | `.replit.app` is HTTPS, which the camera and GPS need on phones |
+| Database | **Replit Database** (PostgreSQL) | `DATABASE_URL` in Secrets; query with `pg` |
+| Photo storage | **Replit App Storage** via `@replit/object-storage` | Keys `report-photos/...`, `resolution-photos/...`; served by `GET /api/photo/[...key]` |
+| Live updates | Polling `GET /api/issues?since=` every 3 s | No websockets to break on stage |
+| Identity | Device ID | Random UUID in `localStorage`, sent as `x-device-id`; one ID per device = one reporter |
+| AI | Gemini Flash via `@google/genai` | Server only, JSON output; model id in `GEMINI_MODEL` |
+| Face blur | `@mediapipe/tasks-vision` FaceDetector | In the browser before upload; pixelate (§9) |
+| Map | MapLibre GL JS + OpenFreeMap | Style `https://tiles.openfreemap.org/styles/liberty`, no key |
+| Camera | `<input type="file" accept="image/*" capture="environment">` | Works on iOS and Android |
+| Compression | `browser-image-compression` | ≤ 300 KB, max 1280 px, JPEG |
 
-| Category | Covers | Routed to (placeholder, verify) |
+```bash
+npm i pg @replit/object-storage @google/genai @mediapipe/tasks-vision maplibre-gl browser-image-compression
+```
+
+**Replit Secrets:** `DATABASE_URL` (added automatically with the database) · `GEMINI_API_KEY` · `GEMINI_MODEL` · `ADMIN_PASSCODE`
+
+### Replit setup (first hour)
+- [ ] Create the Replit App (Next.js); turn on GitHub sync to this repo
+- [ ] Add Replit Database; run `db/schema.sql`, then `db/seed.sql`
+- [ ] Add App Storage
+- [ ] Add Secrets
+- [ ] Deploy (Autoscale) by 12 PM and test the camera on a real phone
+
+---
+
+## 4. Architecture
+
+```
+Phone (Next.js client)
+ ├─ device id (localStorage) → header x-device-id
+ ├─ camera → compress → face blur → preview
+ ├─ POST /api/analyze     → AI suggestion
+ ├─ POST /api/duplicates  → candidate matches
+ ├─ POST /api/reports     → save photo + issue/report rows
+ └─ poll GET /api/issues?since= every 3 s → map + "Fixed" toast
+
+Admin (/admin, passcode)
+ ├─ POST /api/admin/assign
+ ├─ POST /api/admin/verify-fix  → AI before/after verdict
+ └─ POST /api/admin/resolve
+
+Server (Next.js API routes on Replit)
+ ├─ Replit Database (pg)
+ ├─ Replit App Storage (photos)
+ └─ Gemini
+```
+
+The browser never talks to the database or storage directly; **everything goes through API routes.**
+
+```
+app/
+  page.tsx                     # map + "Report a problem" + my issues
+  report/page.tsx              # report flow (§6)
+  issue/[id]/page.tsx          # photo, status, reporter count
+  admin/page.tsx               # demo office dashboard
+  api/analyze/route.ts
+  api/duplicates/route.ts
+  api/reports/route.ts
+  api/issues/route.ts          # polling
+  api/photo/[...key]/route.ts  # streams photo from App Storage
+  api/admin/assign/route.ts
+  api/admin/verify-fix/route.ts
+  api/admin/resolve/route.ts
+components/
+  CampusMap.tsx                # client-only (next/dynamic, ssr: false)
+  IssueCard.tsx  StatusBadge.tsx  Toast.tsx  StepHeader.tsx
+lib/
+  device.ts                    # getDeviceId() (client)
+  db.ts                        # pg Pool + query helper (server)
+  storage.ts                   # App Storage upload/download (server)
+  gemini.ts                    # client + 3 prompts + schemas (server)
+  faceBlur.ts                  # MediaPipe + pixelate (client)
+  image.ts                     # compress, toBase64
+  geo.ts                       # haversine + nearestLocation
+  types.ts                     # shared types (owner: P2)
+db/
+  schema.sql
+  seed.sql
+```
+
+---
+
+## 5. Categories and routing
+
+**Verify real USC office names before the demo.** USG judges will notice invented offices.
+
+| category | Covers | Routed to (placeholder, verify) |
 |---|---|---|
 | `elevator_access` | Elevators, ramps, automatic doors, blocked accessible paths | Facilities: Elevators & Accessibility |
 | `broken_equipment` | Lights, doors, furniture, water fountains, restrooms, leaks | Facilities: Maintenance |
 | `tech` | Printers, Wi-Fi, screens/projectors, charging stations | ITS |
 
-**How routing scales after the hackathon:** routing is a table (category → team), so offices and USG can change it without code. In production it would also use the building type (residence hall → Housing, dining → Hospitality, academic → Facilities) and send work orders by email to offices that don't use a dashboard.
-
-**Issue status:** `open` (red) → `assigned` (amber) → `resolved` (green).
+Status: `open` (red) → `assigned` (amber) → `resolved` (green).
 
 ---
 
-## Privacy, safety and trust
+## 6. Database — owner: P2
 
-| Concern | How Ripple handles it |
+### `db/schema.sql`
+```sql
+create extension if not exists pgcrypto;
+
+create table locations (
+  id text primary key,                 -- e.g. 'leavey'
+  name text not null,
+  lat double precision not null,
+  lng double precision not null,
+  floors text[] not null default '{}'
+);
+
+create table routing (
+  category text primary key,
+  team_name text not null,
+  team_email text
+);
+
+create table issues (
+  id uuid primary key default gen_random_uuid(),
+  location_id text not null references locations(id),
+  floor text,
+  category text not null references routing(category),
+  title text not null,
+  description text,
+  priority text not null default 'medium'
+    check (priority in ('low','medium','high','urgent')),
+  status text not null default 'open'
+    check (status in ('open','assigned','resolved')),
+  assigned_team text,
+  reporter_count int not null default 0,
+  before_photo_path text,
+  after_photo_path text,
+  resolution_note text,
+  ai_fix_verdict jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  resolved_at timestamptz
+);
+
+create table reports (
+  id uuid primary key default gen_random_uuid(),
+  issue_id uuid not null references issues(id) on delete cascade,
+  reporter_id uuid not null,           -- x-device-id
+  photo_path text not null,
+  note text,
+  ai_suggestion jsonb,
+  ai_used boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (issue_id, reporter_id)       -- one confirmation per device per issue
+);
+
+create or replace function refresh_reporter_count() returns trigger
+language plpgsql as $$
+begin
+  update issues
+     set reporter_count = (select count(distinct reporter_id) from reports where issue_id = new.issue_id),
+         updated_at = now()
+   where id = new.issue_id;
+  return new;
+end $$;
+
+create trigger reports_count
+after insert on reports
+for each row execute function refresh_reporter_count();
+
+create index issues_updated_at on issues (updated_at);
+```
+
+**Every UPDATE to `issues` must set `updated_at = now()`**, or polling won't see it.
+
+### `db/seed.sql`
+Get coordinates by dropping a pin on each building (Google Maps → right-click → copy coordinates). Don't guess.
+```sql
+insert into routing (category, team_name, team_email) values
+  ('elevator_access',  'Facilities — Elevators & Accessibility', null),
+  ('broken_equipment', 'Facilities — Maintenance',               null),
+  ('tech',             'ITS',                                    null);
+
+insert into locations (id, name, lat, lng, floors) values
+  ('leavey',   'Leavey Library', 0, 0, '{B,1,2}'),
+  ('ginsburg', 'Ginsburg Hall',  0, 0, '{1,2,3}'),
+  ('parkside', 'Parkside',       0, 0, '{1,2,3,4}');
+  -- add up to 2 more; replace 0,0 with real coordinates
+```
+
+---
+
+## 7. Screens and flows
+
+### Report flow (`/report`) — owner: P1
+1. **Capture:** file input with `capture="environment"`; compress immediately.
+2. **Privacy:** face blur; preview "Faces blurred on your phone before upload." Continue / Retake.
+3. **Location:** preselect nearest seeded location from GPS; student confirms building and floor (student's choice wins).
+4. **AI suggestion:** `/api/analyze`; editable title, category, description, priority. Loading ≤ ~8 s. On error or `is_issue: false` → manual form (category + title).
+5. **Duplicate check:** `/api/duplicates`. For matches with `same_issue && confidence >= 0.6`, show photo, title, "N students reported" → **"Yes, same issue"** / **"No, it's new."**
+6. **Submit:** `/api/reports` with `existingIssueId` or new issue fields.
+7. **Success:** "Reported. You'll get an update here when it's fixed."
+
+### Map (`/`) — owner: P1
+- MapLibre centered on USC. One pin per open/assigned issue (resolved shown faded for 24 h). Red / amber / green, badge = `reporter_count`.
+- Tap a pin → bottom sheet: photo, title, status, count.
+- "My issues" = issues this device reported.
+
+### Notifications — owner: P2 (API) + P1 (UI)
+- Poll `GET /api/issues?since=` every 3 s while the app is open; pause when the tab is hidden.
+- If an issue in "my issues" changes to `resolved` → toast "✅ Fixed: {title}" + `navigator.vibrate?.(200)` (Android only).
+- Update map pins for every returned issue.
+
+### Admin dashboard (`/admin`) — owner: P2
+- Header: **"Demo office dashboard — in production, reports route to existing USC offices."**
+- Passcode sent as `x-admin-passcode`; server checks `ADMIN_PASSCODE`.
+- Tabs: Open / Assigned / Resolved. Card: photo, title, location/floor, priority, reporter count, suggested team.
+- **Assign** → **Upload after photo** (shows AI verdict, before/after side by side) → **Confirm resolved**. AI is advisory; admin decides.
+
+---
+
+## 8. API contracts
+
+JSON bodies. Images are base64 **after** compression and face blur (no `data:` prefix). Every route: `export const maxDuration = 30;`
+
+### `POST /api/analyze` — P3
+```ts
+// req
+{ imageBase64: string; mimeType: "image/jpeg"; locationName: string; floor?: string; note?: string }
+// 200
+{ is_issue: boolean; category: "elevator_access" | "broken_equipment" | "tech";
+  title: string; description: string; priority: "low" | "medium" | "high" | "urgent"; confidence: number }
+// 502 on AI failure → client shows manual form
+{ error: string }
+```
+
+### `POST /api/duplicates` — P3 (AI) + P2 (query)
+Server takes up to **3** candidates: same `location_id` + `category`, not resolved, created in the last 48 h, newest first. If none, return `[]` without calling Gemini.
+```ts
+// req
+{ imageBase64: string; mimeType: "image/jpeg"; locationId: string; category: string }
+// 200
+{ matches: { issue_id: string; same_issue: boolean; confidence: number; reason: string;
+             title: string; reporter_count: number; photo_url: string }[] }
+```
+
+### `POST /api/reports` — P2
+Header `x-device-id` (must be a UUID) → `reporter_id`.
+```ts
+// join existing
+{ imageBase64: string; existingIssueId: string; note?: string; aiSuggestion?: object; aiUsed: boolean }
+// or create new
+{ imageBase64: string; newIssue: { locationId: string; floor?: string; category: string;
+  title: string; description?: string; priority: string }; note?: string; aiSuggestion?: object; aiUsed: boolean }
+// 200
+{ issueId: string; reporterCount: number }
+// 409 if this device already reported this issue
+{ error: "already_reported" }
+```
+Steps: upload to `report-photos/{issueId}/{reportId}.jpg` → insert issue if new (with `before_photo_path`) → insert report (trigger updates count).
+
+### `GET /api/issues?since=<iso>` — P2
+```ts
+// 200 — issues with updated_at > since (no since: all open/assigned + resolved in last 24 h)
+{ issues: Issue[]; serverTime: string }   // client uses serverTime as next `since`
+// GET /api/issues?mine=1 with x-device-id → this device's issues
+```
+
+### `GET /api/photo/[...key]` — P2
+Streams the object from App Storage as `image/jpeg`. All `photo_url` fields point here.
+
+### Admin — P2 (all require `x-admin-passcode`)
+```ts
+POST /api/admin/assign      { issueId }                 // status='assigned', assigned_team from routing
+POST /api/admin/verify-fix  { issueId, imageBase64 }    // upload resolution-photos/{issueId}.jpg, Gemini before/after
+  → { same_location: boolean; resolved: boolean; confidence: number; reason: string; after_photo_url: string }
+POST /api/admin/resolve     { issueId, note? }          // status='resolved', resolved_at=now()
+```
+All three set `updated_at = now()`.
+
+---
+
+## 9. AI and face blur — owner: P3
+
+### Gemini call pattern (`lib/gemini.ts`)
+```ts
+import { GoogleGenAI, Type } from "@google/genai";
+export const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+const MODEL = process.env.GEMINI_MODEL!;
+
+const res = await ai.models.generateContent({
+  model: MODEL,
+  contents: [{ role: "user", parts: [
+    { inlineData: { mimeType: "image/jpeg", data: imageBase64 } },
+    { text: PROMPT },
+  ]}],
+  config: { responseMimeType: "application/json", responseSchema: SCHEMA, temperature: 0.2 },
+});
+const data = JSON.parse(res.text ?? "{}");
+```
+Wrap every call in a ~12 s timeout + try/catch; on failure return 502.
+
+### Prompt 1 — Analyze
+```
+You are triaging a photo that a USC student took of a campus facilities problem.
+Location: {locationName}, floor {floor or "unknown"}. Student note: {note or "none"}.
+
+Decide whether the photo shows a campus facilities problem. If it does not
+(e.g. a selfie, food, a random object), set is_issue to false.
+
+Choose exactly one category:
+- elevator_access: elevators, ramps, automatic doors, blocked accessible paths
+- broken_equipment: lights, doors, furniture, water fountains, restrooms, leaks
+- tech: printers, Wi-Fi, screens/projectors, charging stations
+
+Priority:
+- urgent: safety hazard, or blocks access for wheelchair users
+- high: blocks use of a shared space or service
+- medium: degraded but still usable
+- low: cosmetic
+
+Write a title of at most 8 words and a description of at most 2 sentences.
+Describe only what is visible. Never describe or identify people.
+Set confidence between 0 and 1.
+```
+```ts
+const ANALYZE_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    is_issue:    { type: Type.BOOLEAN },
+    category:    { type: Type.STRING, enum: ["elevator_access", "broken_equipment", "tech"] },
+    title:       { type: Type.STRING },
+    description: { type: Type.STRING },
+    priority:    { type: Type.STRING, enum: ["low", "medium", "high", "urgent"] },
+    confidence:  { type: Type.NUMBER },
+  },
+  required: ["is_issue", "category", "title", "description", "priority", "confidence"],
+};
+```
+
+### Prompt 2 — Duplicate match
+New photo first, then each candidate photo with its issue_id as a text label.
+```
+The FIRST image is a new report. The following images are existing open reports,
+each labeled with its issue_id.
+
+For each existing report, decide whether the new photo shows the SAME physical
+problem — the same object or spot with the same fault — not merely the same
+category or the same building. Different elevators, different printers or
+different restrooms are NOT the same issue.
+
+Return one entry per existing report with issue_id, same_issue, confidence (0–1)
+and a one-sentence reason.
+```
+Schema: `{ matches: [{ issue_id, same_issue, confidence, reason }] }`. Show only `same_issue && confidence >= 0.6`.
+
+### Prompt 3 — Verify fix
+```
+Image 1 is the BEFORE photo of a reported campus problem: "{title}" — {description}.
+Image 2 is the AFTER photo uploaded by the responsible office.
+
+1. same_location: does the after photo show the same place/object as the before photo?
+2. resolved: is the reported problem visibly fixed in the after photo?
+Be strict: if the after photo is unclear or shows a different place, resolved = false.
+Give confidence (0–1) and a one-sentence reason.
+```
+Schema: `{ same_location, resolved, confidence, reason }`. Advisory only.
+
+**Test early:** by 12 PM, run Prompt 1 on ~10 real campus photos (incl. 2 non-issues). Before the freeze, test duplicates with the same object from two angles and one similar-but-different object.
+
+### Face blur (`lib/faceBlur.ts`)
+```ts
+import { FilesetResolver, FaceDetector } from "@mediapipe/tasks-vision";
+
+let detector: FaceDetector | null = null;
+export async function getDetector() {
+  if (detector) return detector;
+  const vision = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm"
+  );
+  detector = await FaceDetector.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath:
+        "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+    },
+    runningMode: "IMAGE",
+    minDetectionConfidence: 0.4,
+  });
+  return detector;
+}
+```
+- Draw the image to a canvas, `detector.detect(canvas)`, and **pixelate** each box (pad ~20%; draw at ~1/16 size, scale back up with `imageSmoothingEnabled = false`).
+- **Don't use `ctx.filter = "blur()"`**; it's unreliable on iOS Safari.
+- Preload the detector when `/report` mounts.
+- Limitation: the short-range model can miss distant faces. Say so honestly if asked.
+
+---
+
+## 10. Team
+
+| Person | Owns | After ~10 PM |
+|---|---|---|
+| **P1 — ________** | Report flow, map, notification UI, mobile polish | Real-phone testing, UI bugs |
+| **P2 — ________** | Database + seed, App Storage, `/api/reports`, `/api/issues`, `/api/photo`, duplicates query, admin dashboard + admin APIs, `lib/types.ts` | Seed demo data, end-to-end testing |
+| **P3 — ________** | Gemini + 3 prompts, `/api/analyze`, duplicate AI, verify-fix AI, face blur, Replit evidence screenshots | Demo script, slides, video, Devpost |
+
+`lib/types.ts` and `db/schema.sql` are owned by P2; others propose changes in chat. Merge to `main` small and often; redeploy after each working milestone.
+
+---
+
+## 11. Timeline (PT)
+
+| Time | Milestone |
 |---|---|
-| People in photos | Faces are blurred on the phone before upload. The AI is told never to describe or identify people. |
-| Spam or fake reports | One confirmation per device per issue; AI rejects non-issues; reporter counts act as trust signals. USC email verification in production. |
-| AI mistakes | AI only suggests. The student confirms the report and duplicates; the office confirms the fix. |
-| Emergencies and crime | Out of scope. Ripple is for facilities problems; emergencies go to DPS. |
-| Honesty in the demo | Anything mocked is labeled (e.g. "Demo office dashboard"). |
+| **Sat 11 AM–12 PM** | Ask the Replit sponsor what they judge on. P1: Replit App + GitHub sync + deploy, camera works on a phone over HTTPS. P2: Database, schema + seed, App Storage, `/api/issues`. P3: Gemini key in Secrets, one photo → JSON. |
+| **12–5 PM** | A photo report saves and appears on another phone's map (no AI yet). |
+| **5–10 PM** | AI suggestion + manual fallback, face blur, duplicate confirmation. |
+| **10 PM–2 AM** | Admin dashboard, assign, after-photo verify, resolve, "Fixed" notification. |
+| **Sun 2 AM** | **Feature freeze.** Test on 3 real phones (iOS + Android), fix bugs, seed demo data. |
+| **3–7 AM** | Sleep in shifts. Devpost description + slide draft written before sleeping. |
+| **7–9 AM** | **Check in by 9 AM.** Record backup demo video, finish slides, screenshots. |
+| **9–10:30 AM** | Complete Devpost, all teammates added. **Submit by 10:30.** |
 
 ---
 
-## Adoption
+## 12. Stretch (only if the gate is met)
 
-- **USG runs Ripple.** Reports go to the **existing** USC offices, and USC doesn't have to change any system.
-- **Phase 1 pilot:** Leavey Library + two residence halls.
-- **Cost:** hosting plus a few cents of AI per report.
-- **Cold start isn't a problem:** every single report is useful on its own because it reaches the office.
+**Gate:** the full loop works on the deployed URL, on 3 phones, 3 times in a row, before ~9 PM Saturday. Build stretch work on a separate branch. Anything unfinished at 2 AM is hidden, not demoed.
 
----
-
-## Roadmap (not built this weekend)
-
-| Feature | What it adds |
-|---|---|
-| **USG dashboard** | Time-to-fix per office and building, overdue issues, chronic problems, building health score |
-| **Points and badges** | Points for verified reports and confirmed fixes; leaderboards by residence hall and student org |
-| **3D campus map** | 3D buildings with floor-by-floor view of issues |
-| **Ask** | Ask a place a question ("How long is the line?"); students there answer with a photo |
-| **Help** | Small favors between nearby students |
-| **Lost & found** | Photo matching between found items and lost reports |
-| **Lantern** | Gate-aware night routing and walk-together groups |
-| **Trojan Pass** | Verified USC identity and karma |
-| **Office integrations** | Push issues into offices' existing ticketing systems |
-
-*USG dashboard stats, a "+points" line in the Fixed notification, or a simple 3D building view are possible stretch goals **only if the core loop is done by 10 PM**. That's a team decision; see `CLAUDE.md` §3.*
+In this order:
+1. "+points" line in the Fixed toast (~30 min)
+2. Simple USG stats on `/admin`: open issues per location, average time-to-fix (~2 h)
+3. Ask: ask a place a question, others answer with a photo or text, shown via the same polling (~3–4 h)
 
 ---
 
-## FAQ
+## 13. Demo
 
-**Why not the existing facilities request system?**
-Students don't know which of 5+ offices owns a problem. Ripple routes it for them, merges duplicates, and closes the loop with the reporter.
+**Seed data:** 4–6 open/assigned issues using real photos the team takes on campus (no faces). Leave one fresh object for the live demo.
 
-**Why can't students just use ChatGPT or Gemini?**
-A chatbot can't know what's broken right now, how many students saw it, or whether it was fixed. That data only exists because students create it in Ripple.
+**Live loop (~90 s):**
+1. Phone A reports → AI fills title/category/priority → submit → pin appears on Phone B's map.
+2. Phone B (or a judge's phone) photographs the same thing → "Same issue?" → Yes → count = 2.
+3. Admin: assign → upload after photo → AI "Resolved, 0.9" → Confirm.
+4. Both phones show "✅ Fixed."
 
-**What about fake reports?**
-One confirmation per device, AI rejects non-issues, and reporter counts show trust. Production adds USC email verification.
+**Pitch (3 min):** problem with real USC examples (0:00–0:30) → live loop (0:30–2:00) → roadmap: Ask / Help / Lost & Found / Lantern (2:00–2:30) → adoption: USG runs it, reports go to existing offices, Leavey + two residence halls pilot, built on Replit (2:30–3:00).
 
-**What about privacy?**
-Faces are blurred on the phone before upload, and the AI never describes people.
+**Backup:** pre-recorded video of the full loop.
 
-**What if the AI is wrong?**
-It only suggests. Students and the office confirm every decision, and the report still goes through if the AI fails.
-
-**Does it need lots of users to work?**
-No. One report already reaches the right office. More users add confirmations and a better live map.
-
----
-
-## Tech at a glance
-
-**Built on Replit:** Replit Deployments (hosting), Replit Database (PostgreSQL), Replit App Storage (photos), Replit Secrets (keys), Replit Agent (scaffolding).
-
-Also: Next.js (TypeScript, Tailwind) · Gemini Flash for vision · MediaPipe face detection in the browser · MapLibre GL + OpenFreeMap. Full details in [`CLAUDE.md`](CLAUDE.md).
+**Be ready for:**
+- *Why not the existing request system?* Students don't know which of 5+ offices owns a problem; Ripple routes it, merges duplicates and closes the loop.
+- *Why not ChatGPT?* It can't know what's broken right now, how many students saw it, or whether it was fixed.
+- *Fake reports?* One confirmation per device, AI rejects non-issues; USC email verification in production.
+- *Privacy?* Faces blurred on the phone before upload; AI never describes people.
+- *AI wrong?* It only suggests; the student and the admin confirm every decision.
 
 ---
 
-## Sources
+## 14. Conventions
 
-- [Parkside elevator outage](https://dailytrojan.com/?p=207328) (Daily Trojan)
-- [University Religious Center accessibility](https://dailytrojan.com/2026/03/11/stairway-to-faith-and-community-roadblock-for-students/) (Daily Trojan, Mar 2026)
-- [Leavey crowding at finals](https://dailytrojan.com/2024/04/09/extend-operating-hours-during-finals/) (Daily Trojan)
-- [Dining hall complaints](https://www.uscannenbergmedia.com/2026/04/20/usc-students-report-dirty-plates-bugs-and-bad-cake-in-dining-halls/) (Annenberg Media, Apr 2026)
-- [Layoffs and advising delays](https://dailytrojan.com/2026/05/01/layoffs-delay-dornsife-viterbi-student-registration/) (Daily Trojan, May 2026)
+- TypeScript everywhere; small components; mobile-first (390 px wide, tap targets ≥ 44 px).
+- Never import `DATABASE_URL`, `GEMINI_API_KEY` or `ADMIN_PASSCODE` in client code.
+- `CampusMap` loads with `next/dynamic` and `ssr: false`.
+- Every async step has a loading state and an error state.
+- No new dependencies without telling the team. Nothing outside §2 without asking the team.
+
+---
+
+## 15. Open decisions
+
+- [ ] Names for P1 / P2 / P3
+- [ ] Final 3–5 locations + real coordinates
+- [ ] Verified USC office names (§5)
+- [ ] Replit deployment URL
+- [ ] What the Replit sponsor judges on
+- [ ] Live-demo object to photograph
