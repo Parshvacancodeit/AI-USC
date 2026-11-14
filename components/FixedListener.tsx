@@ -34,7 +34,7 @@ export default function FixedListener() {
   if (!toast) return null;
   return (
     <div className="fixed inset-x-0 top-0 z-50 mx-auto max-w-[480px] px-3 pt-[max(12px,env(safe-area-inset-top))]">
-      <Link href={`/issue/${toast.id}`} onClick={() => setToast(null)} className="animate-toast glass flex items-center gap-3 rounded-2xl border border-line p-3 shadow-xl">
+      <Link href={`/issue/${toast.id}`} onClick={() => setToast(null)} className="animate-toast glass flex items-center gap-3 rounded-2xl p-3 shadow-2xl shadow-resolved/20">
         <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-resolved text-white"><CheckCircle2 size={22} /></div>
         <div className="min-w-0">
           <p className="text-[15px] font-semibold">Fixed: {toast.title}</p>

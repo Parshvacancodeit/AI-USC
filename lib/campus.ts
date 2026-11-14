@@ -37,9 +37,9 @@ export const CATEGORIES: Record<Category, { label: string; Icon: LucideIcon; cov
 export const PRIORITIES: Priority[] = ["low", "medium", "high", "urgent"];
 
 export const STATUS: Record<Status, { label: string; color: string; bg: string }> = {
-  open: { label: "Open", color: "var(--color-open)", bg: "#fdecea" },
-  assigned: { label: "In progress", color: "var(--color-assigned)", bg: "#fef4e1" },
-  resolved: { label: "Fixed", color: "var(--color-resolved)", bg: "#e6f6ec" },
+  open: { label: "Open", color: "var(--color-open)", bg: "rgba(255,69,58,0.16)" },
+  assigned: { label: "In progress", color: "var(--color-assigned)", bg: "rgba(255,176,32,0.16)" },
+  resolved: { label: "Fixed", color: "var(--color-resolved)", bg: "rgba(48,209,88,0.16)" },
 };
 
 export function nearestLocation(lat: number, lng: number): Location {

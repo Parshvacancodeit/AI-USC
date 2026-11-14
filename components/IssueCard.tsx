@@ -22,7 +22,7 @@ export function Thumb({ issue, size = 56 }: { issue: Issue; size?: number }) {
 
 export default function IssueCard({ issue }: { issue: Issue }) {
   return (
-    <Link href={`/issue/${issue.id}`} onClick={() => haptic()} className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm transition active:scale-[0.98]">
+    <Link href={`/issue/${issue.id}`} onClick={() => haptic()} className="flex items-center gap-3 rounded-2xl bg-surface p-3  transition active:scale-[0.98]">
       <Thumb issue={issue} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-[15px] font-semibold">{issue.title}</p>

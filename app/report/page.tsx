@@ -206,7 +206,7 @@ export default function ReportPage() {
       <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => onFile(e.target.files?.[0] ?? undefined)} />
 
       <div key={step} className="flex-1 px-4 py-4 animate-fade-up">
-        {err && <p className="mb-3 rounded-xl bg-[#fdecea] p-3 text-sm text-open">{err}</p>}
+        {err && <p className="mb-3 rounded-xl bg-open/15 p-3 text-sm text-open">{err}</p>}
 
         {/* 1. Capture */}
         {step === "capture" && (
@@ -221,14 +221,14 @@ export default function ReportPage() {
             </div>
             <div className="grid w-full grid-cols-3 gap-2 text-xs">
               {Object.values(CATEGORIES).map((c) => (
-                <div key={c.label} className="rounded-2xl bg-white p-3">
-                  <c.Icon size={20} className="mx-auto text-cardinal" />
+                <div key={c.label} className="rounded-2xl bg-surface p-3">
+                  <c.Icon size={20} className="mx-auto text-accent" />
                   <p className="mt-1 font-semibold">{c.label}</p>
                 </div>
               ))}
             </div>
-            <a href="tel:+12137404321" className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs text-muted shadow-sm">
-              <Phone size={14} className="text-open" /> Emergency? Don&apos;t report here. <b className="text-cardinal">Call DPS</b>
+            <a href="tel:+12137404321" className="flex items-center gap-2 rounded-full bg-surface px-4 py-2 text-xs text-muted ">
+              <Phone size={14} className="text-open" /> Emergency? Don&apos;t report here. <b className="text-accent">Call DPS</b>
             </a>
           </div>
         )}
@@ -241,7 +241,7 @@ export default function ReportPage() {
               <p className="text-center text-sm text-muted">{busy}</p>
             ) : (
               <>
-                <div className="flex gap-3 rounded-2xl bg-white p-4">
+                <div className="flex gap-3 rounded-2xl bg-surface p-4">
                   <ShieldCheck size={28} className="shrink-0 text-resolved" />
                   <div>
                     <p className="font-semibold">Faces blurred on your phone before upload</p>
@@ -259,7 +259,7 @@ export default function ReportPage() {
           <div className="space-y-4">
             {gpsNote && (
               <p className="flex items-center gap-1.5 text-sm text-muted">
-                <MapPin size={15} className="text-cardinal" /> {gpsNote}
+                <MapPin size={15} className="text-accent" /> {gpsNote}
               </p>
             )}
             <div className="space-y-2">
@@ -271,10 +271,10 @@ export default function ReportPage() {
                     setAutoLoc(false);
                     setFloor(null);
                   }}
-                  className={`flex h-14 w-full items-center justify-between rounded-2xl border-2 bg-white px-4 text-left text-[15px] font-semibold transition ${locId === l.id ? "border-cardinal" : "border-transparent"}`}
+                  className={`flex h-14 w-full items-center justify-between rounded-2xl border-2 bg-surface px-4 text-left text-[15px] font-semibold transition ${locId === l.id ? "border-cardinal" : "border-transparent"}`}
                 >
                   {l.name}
-                  {locId === l.id && <Check size={20} strokeWidth={3} className="text-cardinal" />}
+                  {locId === l.id && <Check size={20} strokeWidth={3} className="text-accent" />}
                 </button>
               ))}
             </div>
@@ -283,7 +283,7 @@ export default function ReportPage() {
                 <p className="mb-2 text-sm font-semibold text-muted">Floor</p>
                 <div className="flex flex-wrap gap-2">
                   {loc.floors.map((f) => (
-                    <button key={f} onClick={() => setFloor(f)} className={`h-11 min-w-11 rounded-xl px-4 font-semibold transition ${floor === f ? "bg-cardinal text-white" : "bg-white"}`}>
+                    <button key={f} onClick={() => setFloor(f)} className={`h-11 min-w-11 rounded-xl px-4 font-semibold transition ${floor === f ? "bg-cardinal text-white" : "bg-surface"}`}>
                       {f}
                     </button>
                   ))}
@@ -305,7 +305,7 @@ export default function ReportPage() {
             ) : (
               <>
                 {loc && (
-                  <div className="rounded-2xl bg-white p-3">
+                  <div className="rounded-2xl bg-surface p-3">
                     <div className="flex items-center gap-3">
                       <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-cardinal text-gold">
                         <MapPin size={20} />
@@ -314,14 +314,14 @@ export default function ReportPage() {
                         <p className="truncate font-semibold">{loc.name}</p>
                         <p className="truncate text-xs text-muted">{autoLoc ? gpsNote : "Chosen by you"}</p>
                       </div>
-                      <button onClick={() => { haptic(); setStep("location"); }} className="h-9 rounded-full bg-canvas px-3 text-xs font-semibold text-cardinal">
+                      <button onClick={() => { haptic(); setStep("location"); }} className="h-9 rounded-full bg-surface-2 px-3 text-xs font-semibold text-accent">
                         Change
                       </button>
                     </div>
                     <div className="mt-3 flex items-center gap-1.5 overflow-x-auto">
                       <span className="mr-1 text-xs font-semibold text-muted">Floor</span>
                       {loc.floors.map((f) => (
-                        <button key={f} onClick={() => { haptic(); setFloor(floor === f ? null : f); }} className={`h-9 min-w-9 shrink-0 rounded-lg px-3 text-sm font-semibold transition ${floor === f ? "bg-cardinal text-white" : "bg-canvas"}`}>
+                        <button key={f} onClick={() => { haptic(); setFloor(floor === f ? null : f); }} className={`h-9 min-w-9 shrink-0 rounded-lg px-3 text-sm font-semibold transition ${floor === f ? "bg-cardinal text-white" : "bg-surface-2"}`}>
                           {f}
                         </button>
                       ))}
@@ -329,7 +329,7 @@ export default function ReportPage() {
                   </div>
                 )}
                 {aiFailed ? (
-                  <p className="rounded-xl bg-gold/25 p-3 text-sm">AI couldn&apos;t tell what&apos;s wrong. Pick a category and add a short title.</p>
+                  <p className="rounded-xl bg-gold/15 p-3 text-gold text-sm">AI couldn&apos;t tell what&apos;s wrong. Pick a category and add a short title.</p>
                 ) : (
                   <p className="flex items-center gap-2 text-sm text-muted">
                     <span className="flex items-center gap-1 rounded-full bg-cardinal px-2 py-0.5 text-[11px] font-semibold text-white"><Sparkles size={11} /> AI</span>
@@ -339,23 +339,23 @@ export default function ReportPage() {
                 <Field label="Category">
                   <div className="grid grid-cols-3 gap-2">
                     {(Object.keys(CATEGORIES) as Category[]).map((c) => (
-                      <button key={c} onClick={() => setForm({ ...form, category: c })} className={`rounded-xl border-2 bg-white p-2 text-xs font-semibold transition ${form.category === c ? "border-cardinal" : "border-transparent"}`}>
-                        <CategoryIcon category={c} size={20} className="mx-auto mb-1 text-cardinal" />
+                      <button key={c} onClick={() => setForm({ ...form, category: c })} className={`rounded-xl border-2 bg-surface p-2 text-xs font-semibold transition ${form.category === c ? "border-cardinal" : "border-transparent"}`}>
+                        <CategoryIcon category={c} size={20} className="mx-auto mb-1 text-accent" />
                         {CATEGORIES[c].label}
                       </button>
                     ))}
                   </div>
                 </Field>
                 <Field label="Title">
-                  <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Elevator out of service" maxLength={80} className="h-12 w-full rounded-xl bg-white px-3 text-[15px] outline-none focus:ring-2 focus:ring-cardinal" />
+                  <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Elevator out of service" maxLength={80} className="h-12 w-full rounded-xl bg-surface px-3 text-[15px] outline-none focus:ring-2 focus:ring-cardinal" />
                 </Field>
                 <Field label="Details (optional)">
-                  <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} className="w-full rounded-xl bg-white p-3 text-[15px] outline-none focus:ring-2 focus:ring-cardinal" />
+                  <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} className="w-full rounded-xl bg-surface p-3 text-[15px] outline-none focus:ring-2 focus:ring-cardinal" />
                 </Field>
                 <Field label="Priority">
                   <div className="grid grid-cols-4 gap-1 rounded-xl bg-line p-1">
                     {PRIORITIES.map((p) => (
-                      <button key={p} onClick={() => setForm({ ...form, priority: p })} className={`h-9 rounded-lg text-xs font-semibold capitalize transition ${form.priority === p ? "bg-white shadow" : "text-muted"}`}>
+                      <button key={p} onClick={() => setForm({ ...form, priority: p })} className={`h-9 rounded-lg text-xs font-semibold capitalize transition ${form.priority === p ? "bg-surface shadow" : "text-muted"}`}>
                         {p}
                       </button>
                     ))}
@@ -383,7 +383,7 @@ export default function ReportPage() {
               <>
                 <p className="text-[15px]">Looks like other Trojans already reported this. Is it the same problem?</p>
                 {matches.map((m) => (
-                  <div key={m.issue_id} className="space-y-3 rounded-2xl bg-white p-3">
+                  <div key={m.issue_id} className="space-y-3 rounded-2xl bg-surface p-3">
                     <div className="flex gap-3">
                       {m.photo_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -394,7 +394,7 @@ export default function ReportPage() {
                       <div className="min-w-0">
                         <p className="font-semibold">{m.title}</p>
                         <p className="flex items-center gap-1 text-xs text-muted"><Users size={12} /> {m.reporter_count} students reported</p>
-                        <p className="mt-1 flex items-start gap-1 text-xs text-muted"><Sparkles size={12} className="mt-0.5 shrink-0 text-cardinal" /> {m.reason}</p>
+                        <p className="mt-1 flex items-start gap-1 text-xs text-muted"><Sparkles size={12} className="mt-0.5 shrink-0 text-accent" /> {m.reason}</p>
                       </div>
                     </div>
                     <button onClick={() => submit(m.issue_id)} className="h-12 w-full rounded-xl bg-cardinal font-semibold text-white active:scale-[0.98] transition">
@@ -402,7 +402,7 @@ export default function ReportPage() {
                     </button>
                   </div>
                 ))}
-                <button onClick={() => submit(null)} className="h-12 w-full rounded-xl bg-white font-semibold">
+                <button onClick={() => submit(null)} className="h-12 w-full rounded-xl bg-surface font-semibold">
                   No, it&apos;s new
                 </button>
               </>
@@ -422,7 +422,7 @@ export default function ReportPage() {
               {result.joined ? `You're Trojan #${result.count} to report this. ` : ""}
               You&apos;ll get an update here when it&apos;s fixed.
             </p>
-            <div className="w-full rounded-2xl bg-white p-4 text-left text-sm">
+            <div className="w-full rounded-2xl bg-surface p-4 text-left text-sm">
               <p className="text-muted">Routed to</p>
               <p className="font-semibold">{CATEGORIES[form.category].team}</p>
             </div>
@@ -430,7 +430,7 @@ export default function ReportPage() {
               <Link href="/" className="flex h-14 items-center justify-center rounded-2xl bg-cardinal text-[17px] font-semibold text-white">
                 See it on the map
               </Link>
-              <Link href={`/issue/${result.issueId}`} className="flex h-12 items-center justify-center rounded-2xl bg-white font-semibold">
+              <Link href={`/issue/${result.issueId}`} className="flex h-12 items-center justify-center rounded-2xl bg-surface font-semibold">
                 Track this report
               </Link>
             </div>
@@ -465,7 +465,7 @@ function Actions({ primary, secondary }: { primary: Btn; secondary?: Btn }) {
   return (
     <div className="flex gap-2 pt-2">
       {secondary && (
-        <button onClick={() => { haptic(); secondary.onClick(); }} className="h-14 flex-1 rounded-2xl bg-white text-[16px] font-semibold">
+        <button onClick={() => { haptic(); secondary.onClick(); }} className="h-14 flex-1 rounded-2xl bg-surface text-[16px] font-semibold">
           {secondary.label}
         </button>
       )}

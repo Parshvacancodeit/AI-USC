@@ -13,7 +13,7 @@ export default function StepHeader({ title, step, total, onBack }: { title: stri
             haptic();
             (onBack ?? (() => router.back()))();
           }}
-          className="grid h-11 w-11 place-items-center text-cardinal"
+          className="grid h-11 w-11 place-items-center text-accent"
           aria-label="Back"
         >
           <ChevronLeft size={26} strokeWidth={2.4} />
