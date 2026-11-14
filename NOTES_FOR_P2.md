@@ -21,3 +21,6 @@ Checked read-only on Sat Nov 14 by P3. Tables, columns, routing rows and both pu
 - `issues`: `id, location_id, category, title, description, status, reporter_count, before_photo_path, after_photo_path, ai_fix_verdict, created_at, updated_at`
 - `/api/reports` should store the report photo path in `issues.before_photo_path` relative to the `report-photos` bucket (e.g. `{issueId}/{reportId}.jpg`). `/api/duplicates` and `/api/admin/verify-fix` download it from there.
 - When `lib/supabase-server.ts` lands, tell P3 so `lib/ai-storage.ts` can switch to it.
+
+## Admin side
+- See `NOTES_FOR_ADMIN.md`: `/admin` page, `/api/admin/assign` and `/api/admin/resolve` are not built yet, plus how to wire the P3 AI routes into the dashboard.
