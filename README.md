@@ -357,6 +357,22 @@ Resolve fires the Realtime update that shows "Fixed" on phones.
 
 ---
 
+### Help SC — Ask, Favors, Lost & Found (team-approved stretch, Sat)
+Schema: `supabase/help.sql` (`help_posts`, `help_replies`, bucket `help-photos`). Types: `lib/help-types.ts`.
+Clients read with the anon key (public RLS select) + Realtime; all writes go through these routes with
+`Authorization: Bearer <supabase access token>`:
+```ts
+POST /api/help/posts    { kind: "ask"|"favor"|"lost"|"found", title, body?, imageBase64?, location:{id,name,lat,lng}, floor? } → { id }
+POST /api/help/replies  { postId, body?, imageBase64? } → { id }
+POST /api/help/resolve  { postId, action: "resolve"|"close"|"reopen", replyId? } → { status }   // author only
+// 422 { error, blocked: true, emergency } when the AI safety check refuses (emergency → show DPS 213-740-4321 / 911)
+```
+Posts expire: ask 3 h, favor 24 h, lost/found 14 d. Limits: 5 posts and 20 replies per user per hour.
+AI safety check (`moderateHelp` in `lib/ai.ts`): blocks posts about people, dating, money, contact/ID numbers,
+harassment, academic dishonesty; emergencies → DPS. Local rules run first and are the fallback if Claude is down.
+
+---
+
 ## 9. AI and face blur — owner: P3
 
 ### Claude call pattern (`lib/ai.ts`)

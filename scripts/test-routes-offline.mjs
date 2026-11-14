@@ -46,5 +46,11 @@ await check("verify-fix: unknown issue → 404", "/api/admin/verify-fix", { body
 await check("work-order: no passcode", "/api/admin/work-order", { body: { issueId: id } }, 401);
 await check("work-order: missing issueId", "/api/admin/work-order", { body: {}, headers: { "x-admin-passcode": PASS } }, 400);
 
+// /api/help/* — sign-in required (no DB writes, no AI)
+await check("help/posts: no sign-in", "/api/help/posts", { body: { kind: "ask", title: "Is Leavey busy?" } }, 401);
+await check("help/replies: no sign-in", "/api/help/replies", { body: { postId: id, body: "Half full" } }, 401);
+await check("help/resolve: no sign-in", "/api/help/resolve", { body: { postId: id, action: "resolve" } }, 401);
+await check("help/posts: bad token", "/api/help/posts", { body: { kind: "ask", title: "x" }, headers: { Authorization: "Bearer not-a-token" } }, 401);
+
 console.log(failed ?`\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);
