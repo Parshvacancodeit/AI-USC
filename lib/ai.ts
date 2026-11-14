@@ -1,5 +1,5 @@
 // P3 — server only. Claude vision calls for README §9 (analyze, duplicate match, verify fix).
-// Structured output via a forced tool call (the tool's input_schema = our JSON contract).
+// Structured output via output_config.format (JSON schema = our contract); no forced tool_choice.
 // Categories are dynamic: the list comes from the DB `routing` table (see loadCategories in
 // lib/ai-storage.ts); a new routing row = a new category, no code change.
 // Every function throws AIUnavailableError on any failure; routes turn it into 502 / [] so
@@ -66,24 +66,36 @@ const img = (raw: string): Block => {
 };
 const txt = (text: string): Block => ({ type: "text", text });
 
-/** One Claude call that must answer by calling `tool` with input matching `schema`. */
-async function callJson<T>(content: Block[], tool: string, schema: Record<string, unknown>): Promise<T> {
+type Effort = "low" | "medium" | "high";
+
+/**
+ * One Claude call whose reply must be JSON matching `schema` (structured outputs, output_config.format).
+ * Forced tool_choice is rejected by Claude Sonnet 5.5 / Opus 5.5, so we don't use tools for this.
+ * fallbacks:"default" → if the model declines (safety classifier), the API re-runs on a fallback model.
+ * `name` only labels log lines.
+ */
+async function callJson<T>(content: Block[], name: string, schema: Record<string, unknown>, effort: Effort = "low"): Promise<T> {
   const { ai, model } = setup();
+  let res;
   try {
-    const res = await ai.messages.create({
+    res = await ai.beta.messages.create({
       model,
-      max_tokens: 1024,
-      // Forced tool_choice ("tool"/"any") isn't supported on this model: use auto + an explicit instruction.
-      system: `Always answer by calling the ${tool} tool exactly once. Never reply with plain text.`,
-      tools: [{ name: tool, description: "Return the result.", input_schema: schema as Anthropic.Tool.InputSchema }],
-      tool_choice: { type: "auto" },
+      max_tokens: 4096, // includes thinking; outputs here are < 300 tokens
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      output_config: { effort, format: { type: "json_schema", schema } },
       messages: [{ role: "user", content }],
     });
-    const block = res.content.find((b) => b.type === "tool_use");
-    if (!block || block.type !== "tool_use") throw new Error("no tool_use block");
-    return block.input as T;
   } catch (err) {
-    throw new AIUnavailableError(`Claude failed: ${(err as Error).message}`);
+    throw new AIUnavailableError(`Claude failed (${name}): ${(err as Error).message}`);
+  }
+  if (res.stop_reason === "refusal") throw new AIUnavailableError(`Claude declined (${name})`);
+  if (res.stop_reason === "max_tokens") throw new AIUnavailableError(`Claude output truncated (${name})`);
+  const text = res.content.map((b) => (b.type === "text" ? b.text : "")).join("");
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new AIUnavailableError(`Claude returned non-JSON (${name})`);
   }
 }
 
@@ -111,6 +123,7 @@ function analyzeSchema(ids: string[]) {
       new_category_id: { type: "string", description: "Only if no category fits well: short snake_case id for a new category. Otherwise empty string." },
       new_category_label: { type: "string", description: "Only if no category fits well: 1-3 word human label. Otherwise empty string." },
     },
+    additionalProperties: false,
     required: ["is_issue", "emergency", "category", "title", "description", "priority", "confidence", "new_category_id", "new_category_label"],
   };
 }
@@ -185,10 +198,12 @@ const DUP_SCHEMA = {
           reason: { type: "string" },
         },
         required: ["issue_id", "same_issue", "confidence", "reason"],
+        additionalProperties: false,
       },
     },
   },
   required: ["matches"],
+  additionalProperties: false,
 };
 
 export async function matchDuplicates(newImage: string, candidates: { issue_id: string; imageBase64: string }[]): Promise<DupVerdict[]> {
@@ -207,7 +222,7 @@ and a one-sentence reason.`),
     img(newImage),
   ];
   for (const c of candidates) content.push(txt(`issue_id: ${c.issue_id}`), img(c.imageBase64));
-  const o = await callJson<{ matches: DupVerdict[] }>(content, "duplicate_verdicts", DUP_SCHEMA);
+  const o = await callJson<{ matches: DupVerdict[] }>(content, "duplicate_verdicts", DUP_SCHEMA, "medium");
   const ids = new Set(candidates.map((c) => c.issue_id));
   return (o.matches ?? [])
     .filter((m) => ids.has(m.issue_id)) // only trust ids we sent
@@ -226,6 +241,7 @@ const FIX_SCHEMA = {
     reason: { type: "string" },
   },
   required: ["same_location", "resolved", "confidence", "reason"],
+  additionalProperties: false,
 };
 
 export async function verifyFix(a: { beforeBase64: string; afterBase64: string; title: string; description?: string | null }): Promise<FixVerdict> {
@@ -236,7 +252,7 @@ Image 2 is the AFTER photo uploaded by the responsible office.
 2. resolved: is the reported problem visibly fixed in the after photo?
 Be strict: if the after photo is unclear or shows a different place, resolved = false.
 Give confidence (0–1) and a one-sentence reason.`;
-  const o = await callJson<FixVerdict>([img(a.beforeBase64), img(a.afterBase64), txt(prompt)], "fix_verdict", FIX_SCHEMA);
+  const o = await callJson<FixVerdict>([img(a.beforeBase64), img(a.afterBase64), txt(prompt)], "fix_verdict", FIX_SCHEMA, "medium");
   const same = Boolean(o.same_location);
   return { same_location: same, resolved: same && Boolean(o.resolved), confidence: clamp01(o.confidence), reason: str(o.reason, 200) };
 }
@@ -267,6 +283,7 @@ const WORK_ORDER_SCHEMA = {
     urgency_note: { type: "string" },
   },
   required: ["subject", "body", "urgency_note"],
+  additionalProperties: false,
 };
 
 /** Accessibility line for elevator/accessibility-type categories (works for future categories too). */

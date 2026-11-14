@@ -360,7 +360,12 @@ Resolve fires the Realtime update that shows "Fixed" on phones.
 ## 9. AI and face blur — owner: P3
 
 ### Claude call pattern (`lib/ai.ts`)
-Each prompt is one `messages.create` call with the image(s) as base64 `image` blocks, a single tool whose `input_schema` is the JSON schema below, and `tool_choice: { type: "tool" }` so Claude must answer in that shape. 15 s timeout, 1 retry; on failure the route returns 502 (analyze) or `[]` (duplicates).
+Each prompt is one `messages.create` call with the image(s) as base64 `image` blocks and **structured outputs**:
+`output_config: { format: { type: "json_schema", schema }, effort }` (every object has `additionalProperties: false`).
+Do **not** use forced `tool_choice` (`{type:"tool"}` / `"any"`): Claude Sonnet 5.5 rejects it with a 400.
+`fallbacks: "default"` (beta `server-side-fallback-2026-07-01`) re-runs a declined request on a fallback model.
+Effort `low` for analyze/work order, `medium` for duplicate/verify comparisons. 12 s timeout, 1 retry; on failure the
+route returns 502 (analyze) or `[]` (duplicates). Measured Sat: ~2.8k input + ~150 output tokens, 2–3 s per analyze call.
 
 ### Prompt 1 — Analyze
 ```

@@ -3,6 +3,7 @@
 //
 //   node --no-warnings --env-file=.env.local scripts/test-ai.mjs          # dry run: shows the plan
 //   node --no-warnings --env-file=.env.local scripts/test-ai.mjs --go     # real calls
+//   ... --go --only=01.jpg,dup                                           # just some of them
 //
 // test-photos/ is git-excluded. Layout:
 //   test-photos/photos.json  [{ file, location, expect }]
@@ -14,10 +15,11 @@ import { createClient } from "@supabase/supabase-js";
 import { analyzePhoto, categoryDef, DEFAULT_CATEGORIES, matchDuplicates } from "../lib/ai.ts";
 
 const GO = process.argv.includes("--go");
+const ONLY = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split(","); // e.g. --only=01.jpg,dup
 const DIR = "test-photos";
-const photos = JSON.parse(fs.readFileSync(path.join(DIR, "photos.json"), "utf8"));
+const photos = JSON.parse(fs.readFileSync(path.join(DIR, "photos.json"), "utf8")).filter((p) => !ONLY || ONLY.includes(p.file));
 const dupPath = path.join(DIR, "dup.json");
-const dup = fs.existsSync(dupPath) ? JSON.parse(fs.readFileSync(dupPath, "utf8")) : null;
+const dup = fs.existsSync(dupPath) && (!ONLY || ONLY.includes("dup")) ? JSON.parse(fs.readFileSync(dupPath, "utf8")) : null;
 const b64 = (f) => fs.readFileSync(path.join(DIR, "small", f)).toString("base64");
 
 // Categories exactly as the live route sees them (read-only)
