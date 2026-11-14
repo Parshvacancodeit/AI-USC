@@ -357,3 +357,17 @@ export function mockReset() {
 
 export const describeLocation = (i: Pick<Issue, "location_id" | "floor">) =>
   `${locationName(i.location_id)}${i.floor ? ` · Floor ${i.floor}` : ""}`;
+
+// ---------- Session helpers (shared with Help SC, lib/help.ts) ----------
+/** Browser Supabase client (anon key): public reads + Realtime. */
+export const browserClient = () => supa();
+/** `Authorization` header for our API routes (starts an anonymous session if needed). */
+export async function authHeaders(): Promise<Record<string, string>> {
+  return { Authorization: `Bearer ${await accessToken()}` };
+}
+/** This device's anonymous user id, or null before a session exists. */
+export async function myUserId(): Promise<string | null> {
+  if (MOCK) return null;
+  const { data } = await supa().auth.getSession();
+  return data.session?.user.id ?? null;
+}
