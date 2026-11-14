@@ -9,7 +9,7 @@ import Sheet from "@/components/Sheet";
 import StatusBadge from "@/components/StatusBadge";
 import TabBar from "@/components/TabBar";
 import { MOCK, describeLocation, ensureSession, listIssues, mockReset, preloadFaceDetector, subscribeIssues } from "@/lib/api";
-import { CATEGORIES, LOCATIONS, STATUS, floorLabel, timeAgo } from "@/lib/campus";
+import { CATEGORIES, STATUS, floorLabel, getLocation, timeAgo } from "@/lib/campus";
 import { haptic } from "@/lib/haptics";
 import { setTheme, useTheme } from "@/lib/theme";
 import type { Category, Issue } from "@/lib/types";
@@ -59,7 +59,8 @@ export default function Live() {
     }),
     [recent],
   );
-  const bldg = LOCATIONS.find((l) => l.id === building) ?? null;
+  const bldg = building ? getLocation(building) : null;
+  const types = useMemo(() => [...new Set(recent.map((i) => i.category))], [recent]);
 
   // Pin tapped → bring its card into view
   function selectPin(issue: Issue) {
@@ -135,7 +136,7 @@ export default function Live() {
           <Chip active={!filter} onClick={() => setFilter(null)}>
             <Layers size={13} /> All
           </Chip>
-          {(Object.keys(CATEGORIES) as Category[]).map((c) => (
+          {types.map((c) => (
             <Chip key={c} active={filter === c} onClick={() => setFilter(filter === c ? null : c)}>
               <CategoryIcon category={c} size={13} /> {CATEGORIES[c].label}
             </Chip>

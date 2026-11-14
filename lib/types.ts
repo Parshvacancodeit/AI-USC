@@ -1,6 +1,7 @@
 // Shared contract. Drafted by P1 directly from README §6 + §8 — P2 owns this file, edit freely.
 
-export type Category = "elevator_access" | "broken_equipment" | "tech";
+/** Problem type id = a row in the `routing` table (dynamic; the AI may propose new ones). */
+export type Category = string;
 export type Priority = "low" | "medium" | "high" | "urgent";
 export type Status = "open" | "assigned" | "resolved";
 
@@ -46,6 +47,7 @@ export interface AnalyzeResult {
   description: string;
   priority: Priority;
   confidence: number;
+  suggested_new_category?: { id: string; label: string } | null;
 }
 
 // POST /api/duplicates
@@ -68,6 +70,10 @@ export interface DuplicateMatch {
 // POST /api/reports
 export interface NewIssueInput {
   locationId: string;
+  /** Full location for buildings/spots not yet in the `locations` table (server upserts it). */
+  location?: Location;
+  /** Label for a brand-new problem type proposed by the AI (server upserts a routing row). */
+  categoryLabel?: string;
   floor?: string;
   category: Category;
   title: string;

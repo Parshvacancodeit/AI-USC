@@ -1,10 +1,11 @@
 "use client";
-import { Accessibility, Bell, ChevronRight, Info, Moon, ShieldCheck } from "lucide-react";
+import { Accessibility, Bell, ChevronRight, Crown, Info, Moon, ShieldCheck, Trophy } from "lucide-react";
 import { useEffect, useState } from "react";
 import IssueCard from "@/components/IssueCard";
 import LargeTitle from "@/components/LargeTitle";
 import TabBar from "@/components/TabBar";
-import { listIssues, myIssueIds } from "@/lib/api";
+import { listIssues, listReports, myIssueIds, myReporterId } from "@/lib/api";
+import { POINTS, emptyBadges, handle, scoreboard, tierFor, type Player } from "@/lib/karma";
 import { haptic } from "@/lib/haptics";
 import { setTheme, useTheme } from "@/lib/theme";
 import type { Issue } from "@/lib/types";
@@ -22,19 +23,32 @@ function usePref(key: string, initial: boolean) {
 
 export default function Me() {
   const [mine, setMine] = useState<Issue[] | null>(null);
+  const [board, setBoard] = useState<Player[] | null>(null);
+  const [me, setMe] = useState<string>("");
   const [access, setAccess] = usePref("pref-access-alerts", true);
   const [notify, setNotify] = usePref("pref-fixed-alerts", true);
   const theme = useTheme();
 
   useEffect(() => {
     const ids = myIssueIds();
-    listIssues()
-      .then((all) => setMine(all.filter((i) => ids.includes(i.id))))
-      .catch(() => setMine([]));
+    Promise.all([listIssues(), listReports(), myReporterId().catch(() => "")])
+      .then(([all, reps, id]) => {
+        setMine(all.filter((i) => ids.includes(i.id)));
+        setBoard(scoreboard(reps, all));
+        setMe(id);
+      })
+      .catch(() => {
+        setMine([]);
+        setBoard([]);
+      });
   }, []);
 
-  const fixed = mine?.filter((i) => i.status === "resolved").length ?? 0;
-  const karma = (mine?.length ?? 0) * 10 + fixed * 25;
+  const self = board?.find((p) => p.id === me) ?? null;
+  const karma = self?.points ?? 0;
+  const fixed = self?.fixed ?? 0;
+  const rank = self && board ? board.indexOf(self) + 1 : null;
+  const { tier, next, progress } = tierFor(karma);
+  const badges = self?.badges ?? emptyBadges();
 
   return (
     <main className="pb-tabbar min-h-dvh">
@@ -45,16 +59,74 @@ export default function Me() {
           <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full border-[14px] border-gold/15" />
           <div className="absolute -right-2 -top-2 h-24 w-24 rounded-full border-[10px] border-gold/20" />
           <div className="relative flex items-center gap-4">
-            <div className="grid h-16 w-16 place-items-center rounded-full bg-gold text-2xl font-extrabold text-cardinal-dark ring-4 ring-white/15">TT</div>
-            <div>
-              <p className="text-xl font-bold">Tommy Trojan</p>
-              <p className="text-sm text-white/70">Demo profile · Class of &apos;27</p>
+            <div className="grid h-16 w-16 place-items-center rounded-full bg-gold text-cardinal-dark ring-4 ring-white/15">
+              <Crown size={30} strokeWidth={2.2} />
+            </div>
+            <div className="min-w-0 text-white">
+              <p className="truncate text-xl font-bold">{me ? handle(me) : "Trojan"}</p>
+              <p className="text-sm text-white/70">
+                <b style={{ color: tier.color === "#8e8e98" ? "#fff" : tier.color }}>{tier.name}</b>
+                {rank ? ` · #${rank} on campus` : " · anonymous"}
+              </p>
             </div>
           </div>
-          <div className="relative mt-5 grid grid-cols-3 gap-2">
+          <div className="relative mt-4">
+            <div className="h-2 overflow-hidden rounded-full bg-black/30">
+              <div className="h-full rounded-full bg-gradient-to-r from-gold to-[#ffe680] transition-all duration-700" style={{ width: `${Math.round(progress * 100)}%` }} />
+            </div>
+            <p className="mt-1.5 text-[11px] text-white/70">{next ? `${next.min - karma} karma to ${next.name}` : "Top tier reached. Fight On!"}</p>
+          </div>
+          <div className="relative mt-4 grid grid-cols-3 gap-2 text-white">
             <Stat n={mine?.length ?? 0} label="Reports" />
             <Stat n={fixed} label="Fixed" />
             <Stat n={karma} label="Karma" gold />
+          </div>
+        </section>
+
+        {/* Badges */}
+        <section className="animate-fade-up" style={{ animationDelay: "60ms" }}>
+          <h2 className="mb-2 px-1 text-[13px] font-semibold uppercase tracking-wider text-muted">Badges</h2>
+          <div className="-mx-4 flex gap-2 overflow-x-auto px-4">
+            {badges.map((b) => (
+              <div key={b.id} className={`flex w-[96px] shrink-0 flex-col items-center gap-1.5 rounded-2xl bg-surface p-3 text-center ${b.earned ? "" : "opacity-45"}`}>
+                <div className={`grid h-11 w-11 place-items-center rounded-full ${b.earned ? "bg-gradient-to-br from-gold to-[#e08a00] text-black" : "bg-surface-2 text-muted"}`}>
+                  <b.Icon size={20} />
+                </div>
+                <p className="text-[11px] font-bold leading-tight">{b.name}</p>
+                <p className="text-[9px] leading-tight text-muted">{b.hint}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 px-1 text-[11px] text-muted">
+            +{POINTS.first} first to report · +{POINTS.confirm} confirm · +{POINTS.fixed} when it&apos;s fixed
+          </p>
+        </section>
+
+        {/* Leaderboard */}
+        <section className="animate-fade-up" style={{ animationDelay: "120ms" }}>
+          <h2 className="mb-2 flex items-center gap-1.5 px-1 text-[13px] font-semibold uppercase tracking-wider text-muted">
+            <Trophy size={14} className="text-gold" /> Campus leaderboard
+          </h2>
+          <div className="overflow-hidden rounded-2xl bg-surface">
+            {board === null && <div className="shimmer h-24" />}
+            {board?.length === 0 && <p className="p-4 text-sm text-muted">No reports yet. Be the first Trojan on the board.</p>}
+            {board?.slice(0, 10).map((p, n) => (
+              <div key={p.id} className={`flex items-center gap-3 px-3 py-2.5 ${n ? "border-t hairline" : ""} ${p.id === me ? "bg-cardinal/15" : ""}`}>
+                <span className={`w-6 text-center text-sm font-extrabold ${n === 0 ? "text-gold" : n < 3 ? "text-ink" : "text-muted"}`}>{n + 1}</span>
+                <div className="grid h-8 w-8 place-items-center rounded-full text-[11px] font-bold text-white" style={{ background: tierFor(p.points).tier.color }}>
+                  {p.handle.split(" ").map((w) => w[0]).slice(0, 2).join("")}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[14px] font-semibold">
+                    {p.handle} {p.id === me && <span className="text-accent">(you)</span>}
+                  </p>
+                  <p className="text-[11px] text-muted">
+                    {tierFor(p.points).tier.name} · {p.reports} report{p.reports === 1 ? "" : "s"}
+                  </p>
+                </div>
+                <span className="text-sm font-bold tabular-nums">{p.points}</span>
+              </div>
+            ))}
           </div>
         </section>
 

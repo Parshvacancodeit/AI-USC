@@ -1,11 +1,13 @@
 // POST /api/reports (README §8): save photo → create issue if new → add this device's report.
 import { NextResponse } from "next/server";
 import { getUserFromRequest, supabaseAdmin } from "@/lib/supabase-server";
-import type { Category, NewIssueInput, Priority } from "@/lib/types";
+import { catInfo } from "@/lib/campus";
+import type { NewIssueInput, Priority } from "@/lib/types";
 
 export const maxDuration = 30;
 
-const CATEGORIES: Category[] = ["elevator_access", "broken_equipment", "tech"];
+const CATEGORY_ID = /^[a-z][a-z0-9_]{1,39}$/;
+const ON_CAMPUS = (lat: number, lng: number) => lat > 34.012 && lat < 34.03 && lng > -118.3 && lng < -118.275;
 const PRIORITIES: Priority[] = ["low", "medium", "high", "urgent"];
 const MAX_BYTES = 1_500_000;
 
@@ -49,9 +51,25 @@ export async function POST(req: Request) {
     const n = body.newIssue!;
     const title = n.title?.trim().slice(0, 120);
     if (!title || title.length < 3) return bad(400, "Title is required");
-    if (!CATEGORIES.includes(n.category)) return bad(400, "Unknown category");
-    const { data: loc } = await db.from("locations").select("id, floors").eq("id", n.locationId).maybeSingle();
-    if (!loc) return bad(400, "Unknown location");
+    if (!CATEGORY_ID.test(n.category ?? "")) return bad(400, "Invalid category");
+
+    // Location: existing row, or a campus building / spot sent by the app (validated, then saved)
+    const { data: loc } = await db.from("locations").select("id").eq("id", n.locationId).maybeSingle();
+    if (!loc) {
+      const l = n.location;
+      const ok = l && l.id === n.locationId && /^[\w-]{2,64}$/.test(l.id) && typeof l.name === "string" && l.name.trim().length > 1 && Number.isFinite(l.lat) && Number.isFinite(l.lng) && ON_CAMPUS(l.lat, l.lng);
+      if (!ok) return bad(400, "Unknown location");
+      const floors = Array.isArray(l.floors) ? l.floors.filter((f) => typeof f === "string" && f.length <= 4).slice(0, 30) : [];
+      const { error } = await db.from("locations").upsert({ id: l.id, name: l.name.trim().slice(0, 80), lat: l.lat, lng: l.lng, floors }, { onConflict: "id", ignoreDuplicates: true });
+      if (error) return bad(500, `Could not save location: ${error.message}`);
+    }
+
+    // Problem type: existing routing row, or a new one proposed by the AI
+    const { data: route } = await db.from("routing").select("category").eq("category", n.category).maybeSingle();
+    if (!route) {
+      const { error } = await db.from("routing").upsert({ category: n.category, team_name: catInfo(n.category).team }, { onConflict: "category", ignoreDuplicates: true });
+      if (error) return bad(500, `Could not save problem type: ${error.message}`);
+    }
     issueId = crypto.randomUUID();
     isNew = true;
   }

@@ -2,8 +2,9 @@
 // Client-only map. Load with next/dynamic({ ssr: false }).
 import maplibregl from "maplibre-gl";
 import { useEffect, useRef } from "react";
-import { FLOOR_HEIGHT_M, LOCATIONS } from "@/lib/campus";
-import { CAMPUS_RING, FOOTPRINTS } from "@/lib/campus-geo";
+import { FLOOR_HEIGHT_M, USC_CENTER, getLocation } from "@/lib/campus";
+import { CAMPUS_RING } from "@/lib/campus-geo";
+import { USC_BUILDINGS } from "@/lib/usc-buildings";
 import type { Theme } from "@/lib/theme";
 import type { Issue, Status } from "@/lib/types";
 
@@ -27,8 +28,8 @@ function scaleRing(ring: [number, number][], k: number): [number, number][] {
 }
 
 function campusBounds(): [[number, number], [number, number]] {
-  const xs = LOCATIONS.map((l) => l.lng);
-  const ys = LOCATIONS.map((l) => l.lat);
+  const xs = CAMPUS_RING.map((p) => p[0]);
+  const ys = CAMPUS_RING.map((p) => p[1]);
   return [
     [Math.min(...xs), Math.min(...ys)],
     [Math.max(...xs), Math.max(...ys)],
@@ -39,9 +40,11 @@ function campusBounds(): [[number, number], [number, number]] {
 let SLAB = "#d9d9e3";
 function floorSlabs(issues: Issue[]): GeoJSON.FeatureCollection {
   const features: GeoJSON.Feature[] = [];
-  LOCATIONS.forEach((loc) => {
-    const ring = FOOTPRINTS[loc.id];
-    if (!ring) return;
+  const active = new Set(issues.filter((x) => x.status !== "resolved").map((x) => x.location_id));
+  active.forEach((id) => {
+    const loc = getLocation(id);
+    const ring = USC_BUILDINGS.find((b) => b.id === id)?.ring;
+    if (!loc || !ring) return;
     const slab = scaleRing(ring, 1.06);
     loc.floors.forEach((f, i) => {
       const worst = issues
@@ -62,10 +65,11 @@ function floorSlabs(issues: Issue[]): GeoJSON.FeatureCollection {
 }
 
 function position(issue: Issue, idx: number): [number, number] {
-  const loc = LOCATIONS.find((l) => l.id === issue.location_id) ?? LOCATIONS[0];
+  const loc = getLocation(issue.location_id);
+  const [lng, lat] = loc ? [loc.lng, loc.lat] : USC_CENTER;
   const a = idx * 2.4;
   const r = idx === 0 ? 0 : 0.00012 * Math.sqrt(idx);
-  return [loc.lng + r * Math.cos(a), loc.lat + r * Math.sin(a)];
+  return [lng + r * Math.cos(a), lat + r * Math.sin(a)];
 }
 function paint(el: HTMLElement, issue: Issue) {
   const c = HEX[issue.status];
@@ -116,7 +120,33 @@ export default function CampusMap({ issues, onSelect, onBuilding, focusId, focus
       setTimeout(() => mk.remove(), 2400);
     };
 
+    const tags = new Map<string, maplibregl.Marker>();
+    const syncTags = (list: Issue[]) => {
+      const want = new Set(list.map((i) => i.location_id).filter((id) => USC_BUILDINGS.some((b) => b.id === id)));
+      want.forEach((id) => {
+        if (tags.has(id)) return;
+        const l = getLocation(id);
+        if (!l) return;
+        const el = document.createElement("button");
+        el.className = "bldg-tag";
+        el.textContent = l.name;
+        el.style.zIndex = "1";
+        el.onclick = (ev) => {
+          ev.stopPropagation();
+          cbs.current.onBuilding(id);
+        };
+        tags.set(id, new maplibregl.Marker({ element: el, offset: [0, 24] }).setLngLat([l.lng, l.lat]).addTo(m));
+      });
+      tags.forEach((mk, id) => {
+        if (!want.has(id)) {
+          mk.remove();
+          tags.delete(id);
+        }
+      });
+    };
+
     const syncPins: SyncFn = (list, animate) => {
+      syncTags(list);
       const seen = new Set<string>();
       const perLoc: Record<string, number> = {};
       list.forEach((issue) => {
@@ -195,18 +225,6 @@ export default function CampusMap({ issues, onSelect, onBuilding, focusId, focus
         },
       });
 
-      LOCATIONS.forEach((l) => {
-        const el = document.createElement("button");
-        el.className = "bldg-tag";
-        el.textContent = l.name;
-        el.style.zIndex = "1";
-        el.onclick = (ev) => {
-          ev.stopPropagation();
-          cbs.current.onBuilding(l.id);
-        };
-        new maplibregl.Marker({ element: el, offset: [0, 24] }).setLngLat([l.lng, l.lat]).addTo(m);
-      });
-
       sync.current = syncPins;
       syncPins(latest.current, false);
 
@@ -239,7 +257,7 @@ export default function CampusMap({ issues, onSelect, onBuilding, focusId, focus
   }, [focusId]);
 
   useEffect(() => {
-    const loc = LOCATIONS.find((l) => l.id === focusBuilding);
+    const loc = focusBuilding ? getLocation(focusBuilding) : null;
     const m = map.current;
     if (loc && m) m.flyTo({ center: [loc.lng, loc.lat - 0.0003], zoom: 18, pitch: 62, bearing: m.getBearing() + 25, duration: 1800, essential: true });
   }, [focusBuilding]);

@@ -2,9 +2,10 @@
 // Each one uses the real API route / Supabase when it exists, and a labeled MOCK otherwise,
 // so the UI works end to end before P2 and P3 land their pieces.
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { CATEGORIES, locationName } from "./campus";
+import { CATEGORIES, locationName, registerLocations, registerRouting } from "./campus";
 import { blurFaces as realBlur, preloadFaceDetector } from "./faceBlur";
 import type {
+  Location,
   AnalyzeRequest,
   AnalyzeResult,
   DuplicateMatch,
@@ -153,11 +154,46 @@ export async function submitReport(req: ReportRequest): Promise<ReportResponse> 
 }
 
 // ---------- Reads + realtime ----------
+let catalogLoaded: Promise<void> | null = null;
+/** Loads the DB's locations + problem types into the campus registry (once). */
+export function loadCatalog(): Promise<void> {
+  if (MOCK) {
+    try {
+      registerLocations(JSON.parse(localStorage.getItem(LOC_KEY) ?? "[]"));
+    } catch {}
+    return Promise.resolve();
+  }
+  catalogLoaded ??= Promise.all([
+    supa().from("locations").select("id,name,lat,lng,floors"),
+    supa().from("routing").select("category,team_name"),
+  ]).then(([l, r]) => {
+    if (l.data) registerLocations(l.data as Location[]);
+    if (r.data) registerRouting(r.data as { category: string; team_name: string }[]);
+  });
+  return catalogLoaded;
+}
+
 export async function listIssues(): Promise<Issue[]> {
+  await loadCatalog().catch(() => {});
   if (MOCK) return readStore();
   const { data, error } = await supa().from("issues").select("*").order("created_at", { ascending: false });
   if (error) throw new ApiError(500, error.message);
   return data as Issue[];
+}
+
+/** All reports (for karma + leaderboard). */
+export async function listReports(): Promise<{ issue_id: string; reporter_id: string; created_at: string }[]> {
+  if (MOCK) return readStore().flatMap((i) => Array.from({ length: i.reporter_count }, (_, k) => ({ issue_id: i.id, reporter_id: myIssueIds().includes(i.id) && k === 0 ? "me" : `demo-${(i.id.length + k) % 7}`, created_at: i.created_at })));
+  const { data } = await supa().from("reports").select("issue_id,reporter_id,created_at");
+  return data ?? [];
+}
+
+/** This device's reporter id (Supabase anonymous user id). */
+export async function myReporterId(): Promise<string> {
+  if (MOCK) return "me";
+  await accessToken();
+  const { data } = await supa().auth.getSession();
+  return data.session?.user.id ?? "";
 }
 
 export async function getIssue(id: string): Promise<Issue | null> {
@@ -205,6 +241,7 @@ function addMyIssue(id: string) {
 
 // ---------- MOCK store (localStorage, syncs across tabs) ----------
 const STORE_KEY = "ripple-demo-issues";
+const LOC_KEY = "ripple-demo-locations";
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const ago = (min: number) => new Date(Date.now() - min * 60000).toISOString();
 
@@ -254,6 +291,13 @@ async function mockSubmit(req: ReportRequest): Promise<ReportResponse> {
     issue = { ...cur, reporter_count: cur.reporter_count + 1, updated_at: now };
   } else {
     const n = req.newIssue;
+    if (n.location) {
+      registerLocations([n.location]);
+      try {
+        const saved: Location[] = JSON.parse(localStorage.getItem(LOC_KEY) ?? "[]");
+        localStorage.setItem(LOC_KEY, JSON.stringify([n.location, ...saved.filter((x) => x.id !== n.location!.id)].slice(0, 50)));
+      } catch {}
+    }
     issue = {
       id: `demo-${Date.now()}`,
       location_id: n.locationId,
@@ -292,6 +336,7 @@ export function mockAdvance(id: string) {
 export function mockReset() {
   localStorage.removeItem(STORE_KEY);
   localStorage.removeItem(MY_KEY);
+  localStorage.removeItem(LOC_KEY);
   localStorage.removeItem("ripple-notified");
   location.reload();
 }

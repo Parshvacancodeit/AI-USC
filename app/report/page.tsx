@@ -4,11 +4,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { CategoryIcon } from "@/components/Icon";
+const MapPicker = dynamic(() => import("@/components/MapPicker"), { ssr: false, loading: () => <div className="shimmer h-[46dvh] rounded-3xl" /> });
 import { haptic } from "@/lib/haptics";
-import { meters, readPhotoGps } from "@/lib/exif-gps";
+import { readPhotoGps } from "@/lib/exif-gps";
+import { locate, type Spot } from "@/lib/locate";
+import dynamic from "next/dynamic";
 import StepHeader from "@/components/StepHeader";
 import { ApiError, analyze, blurFaces, findDuplicates, preloadFaceDetector, prepareImage, submitReport } from "@/lib/api";
-import { CATEGORIES, LOCATIONS, PRIORITIES, nearestLocation } from "@/lib/campus";
+import { CATEGORIES, PRIORITIES, categoryIds } from "@/lib/campus";
+import { loadCatalog } from "@/lib/api";
 import type { AnalyzeResult, Category, DuplicateMatch, Priority } from "@/lib/types";
 
 type Step = "capture" | "privacy" | "location" | "details" | "duplicate" | "done";
@@ -33,11 +37,14 @@ export default function ReportPage() {
 
   const [photo, setPhoto] = useState<{ dataUrl: string; base64: string } | null>(null);
   const [faces, setFaces] = useState(0);
-  const [locId, setLocId] = useState<string | null>(null);
+  const [spot, setSpot] = useState<Spot | null>(null);
+  const [picked, setPicked] = useState<Spot | null>(null);
+  const [gpsPos, setGpsPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [newType, setNewType] = useState<{ id: string; label: string } | null>(null);
   const [gpsNote, setGpsNote] = useState<string | null>(null);
   const [autoLoc, setAutoLoc] = useState(false);
   const fix = useRef<Promise<{ lat: number; lng: number } | null> | null>(null);
-  const detecting = useRef<Promise<string | null>>(Promise.resolve(null));
+  const detecting = useRef<Promise<Spot | null>>(Promise.resolve(null));
   const [floor, setFloor] = useState<string | null>(null);
   const [ai, setAi] = useState<AnalyzeResult | null>(null);
   const [aiFailed, setAiFailed] = useState(false);
@@ -45,7 +52,8 @@ export default function ReportPage() {
   const [matches, setMatches] = useState<DuplicateMatch[]>([]);
   const [result, setResult] = useState<{ issueId: string; count: number; joined: boolean } | null>(null);
 
-  const loc = LOCATIONS.find((l) => l.id === locId) ?? null;
+  const loc = spot?.location ?? null;
+  useEffect(() => void loadCatalog().catch(() => {}), []);
   useEffect(() => void preloadFaceDetector(), []);
 
   // Ask for the phone's position the moment the camera opens (runs while the photo is taken)
@@ -61,27 +69,29 @@ export default function ReportPage() {
     fileRef.current?.click();
   }
 
-  /** Photo GPS first, then phone GPS. Picks the nearest building within 500 m. */
-  async function detectBuilding(file: File): Promise<string | null> {
+  /** Photo GPS first, then phone GPS → "Inside X" or "40 m north of X". Off campus → map picker. */
+  async function detectBuilding(file: File): Promise<Spot | null> {
     const fromPhoto = await readPhotoGps(file);
     const pos = fromPhoto ?? (await Promise.race([fix.current ?? Promise.resolve(null), new Promise<null>((r) => setTimeout(() => r(null), 6000))]));
     if (!pos) return null;
-    const near = nearestLocation(pos.lat, pos.lng);
-    if (meters(pos, near) > 500) {
-      setGpsNote("You don't seem to be near a Ripple building. Pick one.");
+    setGpsPos(pos);
+    const onCampus = pos.lat > 34.012 && pos.lat < 34.03 && pos.lng > -118.3 && pos.lng < -118.275;
+    if (!onCampus) {
+      setGpsNote("You seem to be off campus. Drop the pin where the problem is.");
       return null;
     }
-    setLocId(near.id);
+    const s = locate(pos.lat, pos.lng);
+    setSpot(s);
     setAutoLoc(true);
-    setGpsNote(fromPhoto ? "Detected from your photo's location" : "Detected from your phone's location");
-    return near.id;
+    setGpsNote(fromPhoto ? "From your photo's location" : "From your phone's location");
+    return s;
   }
 
   async function afterPrivacy() {
-    if (!locId) setBusy("Finding your building…");
-    const id = locId ?? (await detecting.current);
+    if (!spot) setBusy("Finding where you are…");
+    const s = spot ?? (await detecting.current);
     setBusy(null);
-    if (id) toDetails(id);
+    if (s) toDetails(s);
     else toLocation();
   }
 
@@ -92,7 +102,9 @@ export default function ReportPage() {
     setErr(null);
     setStep("privacy");
     setBusy("Blurring faces on your phone…");
-    setLocId(null);
+    setSpot(null);
+    setFloor(null);
+    setNewType(null);
     setAutoLoc(false);
     setAi(null);
     setAiFailed(false);
@@ -112,23 +124,13 @@ export default function ReportPage() {
 
   // 2 → 3: locate via GPS
   function toLocation() {
+    setPicked(spot);
     setStep("location");
-    if (locId || !navigator.geolocation) return;
-    setGpsNote("Finding your building…");
-    navigator.geolocation.getCurrentPosition(
-      (p) => {
-        const n = nearestLocation(p.coords.latitude, p.coords.longitude);
-        setLocId((cur) => cur ?? n.id);
-        setGpsNote(`Looks like you're near ${n.name}`);
-      },
-      () => setGpsNote("Location off. Pick your building."),
-      { enableHighAccuracy: true, timeout: 6000 },
-    );
   }
 
   // 3 → 4: AI suggestion (never blocks: falls back to manual form)
-  async function toDetails(id?: string) {
-    const l = LOCATIONS.find((x) => x.id === (id ?? locId));
+  async function toDetails(s?: Spot) {
+    const l = (s ?? spot)?.location;
     if (!l || !photo) return;
     setStep("details");
     if (ai || aiFailed) return; // already analyzed (e.g. came back from "Change")
@@ -141,7 +143,8 @@ export default function ReportPage() {
       ]);
       setAi(res);
       if (!res.is_issue) setAiFailed(true);
-      setForm({ category: res.category, title: res.is_issue ? res.title : "", description: res.is_issue ? res.description : "", priority: res.priority });
+      setNewType(res.suggested_new_category ?? null);
+      setForm({ category: res.suggested_new_category?.id ?? res.category, title: res.is_issue ? res.title : "", description: res.is_issue ? res.description : "", priority: res.priority });
     } catch {
       setAi(null);
       setAiFailed(true);
@@ -176,7 +179,7 @@ export default function ReportPage() {
         ? await submitReport({ ...common, existingIssueId })
         : await submitReport({
             ...common,
-            newIssue: { locationId: loc.id, floor: floor ?? undefined, category: form.category, title: form.title.trim(), description: form.description.trim() || undefined, priority: form.priority },
+            newIssue: { locationId: loc.id, location: loc, categoryLabel: newType?.id === form.category ? newType.label : undefined, floor: floor ?? undefined, category: form.category, title: form.title.trim(), description: form.description.trim() || undefined, priority: form.priority },
           });
       setResult({ issueId: out.issueId, count: out.reporterCount, joined: !!existingIssueId });
       haptic("success");
@@ -220,7 +223,7 @@ export default function ReportPage() {
               <p className="mt-1 text-[15px] text-muted">Broken elevator, dead printer, leaking ceiling.<br />One photo is all it takes.</p>
             </div>
             <div className="grid w-full grid-cols-3 gap-2 text-xs">
-              {Object.values(CATEGORIES).map((c) => (
+              {categoryIds().slice(0, 3).map((id) => CATEGORIES[id]).map((c) => (
                 <div key={c.label} className="rounded-2xl bg-surface p-3">
                   <c.Icon size={20} className="mx-auto text-accent" />
                   <p className="mt-1 font-semibold">{c.label}</p>
@@ -257,40 +260,26 @@ export default function ReportPage() {
         {/* 3. Location */}
         {step === "location" && (
           <div className="space-y-4">
-            {gpsNote && (
+            {gpsNote && !spot && (
               <p className="flex items-center gap-1.5 text-sm text-muted">
                 <MapPin size={15} className="text-accent" /> {gpsNote}
               </p>
             )}
-            <div className="space-y-2">
-              {LOCATIONS.map((l) => (
-                <button
-                  key={l.id}
-                  onClick={() => {
-                    setLocId(l.id);
-                    setAutoLoc(false);
-                    setFloor(null);
-                  }}
-                  className={`flex h-14 w-full items-center justify-between rounded-2xl border-2 bg-surface px-4 text-left text-[15px] font-semibold transition ${locId === l.id ? "border-cardinal" : "border-transparent"}`}
-                >
-                  {l.name}
-                  {locId === l.id && <Check size={20} strokeWidth={3} className="text-accent" />}
-                </button>
-              ))}
-            </div>
-            {loc && (
-              <div>
-                <p className="mb-2 text-sm font-semibold text-muted">Floor</p>
-                <div className="flex flex-wrap gap-2">
-                  {loc.floors.map((f) => (
-                    <button key={f} onClick={() => setFloor(f)} className={`h-11 min-w-11 rounded-xl px-4 font-semibold transition ${floor === f ? "bg-cardinal text-white" : "bg-surface"}`}>
-                      {f}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            <Actions primary={{ label: "Continue", onClick: () => toDetails(), disabled: !loc }} />
+            <MapPicker start={spot?.location ?? gpsPos} onChange={setPicked} />
+            <p className="text-center text-xs text-muted">Works anywhere on campus: inside a building, or outdoors near one.</p>
+            <Actions
+              primary={{
+                label: "Use this spot",
+                disabled: !picked,
+                onClick: () => {
+                  if (!picked) return;
+                  setSpot(picked);
+                  setAutoLoc(false);
+                  setFloor(null);
+                  toDetails(picked);
+                },
+              }}
+            />
           </div>
         )}
 
@@ -311,21 +300,21 @@ export default function ReportPage() {
                         <MapPin size={20} />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate font-semibold">{loc.name}</p>
-                        <p className="truncate text-xs text-muted">{autoLoc ? gpsNote : "Chosen by you"}</p>
+                        <p className="truncate font-semibold">{spot?.label ?? loc.name}</p>
+                        <p className="truncate text-xs text-muted">{autoLoc ? gpsNote : "Pinned on the map"}</p>
                       </div>
-                      <button onClick={() => { haptic(); setStep("location"); }} className="h-9 rounded-full bg-surface-2 px-3 text-xs font-semibold text-accent">
-                        Change
+                      <button onClick={() => { haptic(); toLocation(); }} className="h-9 rounded-full bg-surface-2 px-3 text-xs font-semibold text-accent">
+                        Adjust
                       </button>
                     </div>
-                    <div className="mt-3 flex items-center gap-1.5 overflow-x-auto">
+                    {loc.floors.length > 0 && <div className="mt-3 flex items-center gap-1.5 overflow-x-auto">
                       <span className="mr-1 text-xs font-semibold text-muted">Floor</span>
                       {loc.floors.map((f) => (
                         <button key={f} onClick={() => { haptic(); setFloor(floor === f ? null : f); }} className={`h-9 min-w-9 shrink-0 rounded-lg px-3 text-sm font-semibold transition ${floor === f ? "bg-cardinal text-white" : "bg-surface-2"}`}>
                           {f}
                         </button>
                       ))}
-                    </div>
+                    </div>}
                   </div>
                 )}
                 {aiFailed ? (
@@ -337,11 +326,16 @@ export default function ReportPage() {
                   </p>
                 )}
                 <Field label="Category">
-                  <div className="grid grid-cols-3 gap-2">
-                    {(Object.keys(CATEGORIES) as Category[]).map((c) => (
-                      <button key={c} onClick={() => setForm({ ...form, category: c })} className={`rounded-xl border-2 bg-surface p-2 text-xs font-semibold transition ${form.category === c ? "border-cardinal" : "border-transparent"}`}>
-                        <CategoryIcon category={c} size={20} className="mx-auto mb-1 text-accent" />
-                        {CATEGORIES[c].label}
+                  <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
+                    {[...(newType ? [newType.id] : []), ...categoryIds().filter((c) => c !== newType?.id)].map((c) => (
+                      <button
+                        key={c}
+                        onClick={() => { haptic(); setForm({ ...form, category: c }); }}
+                        className={`flex w-[84px] shrink-0 flex-col items-center gap-1 rounded-xl border-2 bg-surface px-1 py-2 text-[11px] font-semibold transition ${form.category === c ? "border-cardinal" : "border-transparent"}`}
+                      >
+                        <CategoryIcon category={c} size={20} className="text-accent" />
+                        <span className="w-full truncate text-center">{newType?.id === c ? newType.label : CATEGORIES[c].label}</span>
+                        {newType?.id === c && <span className="rounded bg-gold/20 px-1 text-[9px] font-bold uppercase text-gold">New</span>}
                       </button>
                     ))}
                   </div>
@@ -418,6 +412,9 @@ export default function ReportPage() {
               <div className="grid h-24 w-24 place-items-center rounded-full bg-resolved text-white"><Check size={52} strokeWidth={3} /></div>
             </div>
             <p className="text-2xl font-bold">Reported. Fight On!</p>
+            <span className="animate-fade-up rounded-full bg-gradient-to-r from-gold to-[#e08a00] px-4 py-1.5 text-sm font-extrabold text-black shadow-lg" style={{ animationDelay: "250ms" }}>
+              +{result.joined ? 5 : 10} karma
+            </span>
             <p className="text-[15px] text-muted">
               {result.joined ? `You're Trojan #${result.count} to report this. ` : ""}
               You&apos;ll get an update here when it&apos;s fixed.

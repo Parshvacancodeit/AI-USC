@@ -73,8 +73,10 @@ async function callJson<T>(content: Block[], tool: string, schema: Record<string
     const res = await ai.messages.create({
       model,
       max_tokens: 1024,
+      // Forced tool_choice ("tool"/"any") isn't supported on this model: use auto + an explicit instruction.
+      system: `Always answer by calling the ${tool} tool exactly once. Never reply with plain text.`,
       tools: [{ name: tool, description: "Return the result.", input_schema: schema as Anthropic.Tool.InputSchema }],
-      tool_choice: { type: "tool", name: tool },
+      tool_choice: { type: "auto" },
       messages: [{ role: "user", content }],
     });
     const block = res.content.find((b) => b.type === "tool_use");
