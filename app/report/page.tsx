@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { CategoryIcon } from "@/components/Icon";
 import { haptic } from "@/lib/haptics";
+import { meters, readPhotoGps } from "@/lib/exif-gps";
 import StepHeader from "@/components/StepHeader";
 import { ApiError, analyze, blurFaces, findDuplicates, preloadFaceDetector, prepareImage, submitReport } from "@/lib/api";
 import { CATEGORIES, LOCATIONS, PRIORITIES, nearestLocation } from "@/lib/campus";
@@ -34,6 +35,9 @@ export default function ReportPage() {
   const [faces, setFaces] = useState(0);
   const [locId, setLocId] = useState<string | null>(null);
   const [gpsNote, setGpsNote] = useState<string | null>(null);
+  const [autoLoc, setAutoLoc] = useState(false);
+  const fix = useRef<Promise<{ lat: number; lng: number } | null> | null>(null);
+  const detecting = useRef<Promise<string | null>>(Promise.resolve(null));
   const [floor, setFloor] = useState<string | null>(null);
   const [ai, setAi] = useState<AnalyzeResult | null>(null);
   const [aiFailed, setAiFailed] = useState(false);
@@ -44,13 +48,55 @@ export default function ReportPage() {
   const loc = LOCATIONS.find((l) => l.id === locId) ?? null;
   useEffect(() => void preloadFaceDetector(), []);
 
-  // 1 → 2: capture, compress, blur
+  // Ask for the phone's position the moment the camera opens (runs while the photo is taken)
+  function openCamera() {
+    fix.current ??= new Promise((resolve) => {
+      if (!navigator.geolocation) return resolve(null);
+      navigator.geolocation.getCurrentPosition(
+        (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+      );
+    });
+    fileRef.current?.click();
+  }
+
+  /** Photo GPS first, then phone GPS. Picks the nearest building within 500 m. */
+  async function detectBuilding(file: File): Promise<string | null> {
+    const fromPhoto = await readPhotoGps(file);
+    const pos = fromPhoto ?? (await Promise.race([fix.current ?? Promise.resolve(null), new Promise<null>((r) => setTimeout(() => r(null), 6000))]));
+    if (!pos) return null;
+    const near = nearestLocation(pos.lat, pos.lng);
+    if (meters(pos, near) > 500) {
+      setGpsNote("You don't seem to be near a Ripple building. Pick one.");
+      return null;
+    }
+    setLocId(near.id);
+    setAutoLoc(true);
+    setGpsNote(fromPhoto ? "Detected from your photo's location" : "Detected from your phone's location");
+    return near.id;
+  }
+
+  async function afterPrivacy() {
+    if (!locId) setBusy("Finding your building…");
+    const id = locId ?? (await detecting.current);
+    setBusy(null);
+    if (id) toDetails(id);
+    else toLocation();
+  }
+
+  // 1 → 2: capture, compress, blur (building detection runs in parallel)
   async function onFile(file?: File) {
     if (!file) return;
     haptic("medium");
     setErr(null);
     setStep("privacy");
     setBusy("Blurring faces on your phone…");
+    setLocId(null);
+    setAutoLoc(false);
+    setAi(null);
+    setAiFailed(false);
+    detecting.current = detectBuilding(file);
     try {
       const img = await prepareImage(file);
       const blurred = await blurFaces(img.dataUrl);
@@ -81,14 +127,16 @@ export default function ReportPage() {
   }
 
   // 3 → 4: AI suggestion (never blocks: falls back to manual form)
-  async function toDetails() {
-    if (!loc || !photo) return;
+  async function toDetails(id?: string) {
+    const l = LOCATIONS.find((x) => x.id === (id ?? locId));
+    if (!l || !photo) return;
     setStep("details");
+    if (ai || aiFailed) return; // already analyzed (e.g. came back from "Change")
     setBusy("Ripple AI is reading the photo…");
     setAiFailed(false);
     try {
       const res = await Promise.race([
-        analyze({ imageBase64: photo.base64, mimeType: "image/jpeg", locationName: loc.name, floor: floor ?? undefined }),
+        analyze({ imageBase64: photo.base64, mimeType: "image/jpeg", locationName: l.name, floor: floor ?? undefined }),
         new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 9000)),
       ]);
       setAi(res);
@@ -163,7 +211,7 @@ export default function ReportPage() {
         {/* 1. Capture */}
         {step === "capture" && (
           <div className="flex h-full flex-col items-center justify-center gap-6 pt-10 text-center">
-            <button onClick={() => fileRef.current?.click()} className="relative grid h-40 w-40 place-items-center rounded-full bg-gradient-to-b from-[#b3121b] to-cardinal-dark text-white shadow-2xl shadow-cardinal/40 ring-4 ring-gold/70 ring-offset-4 ring-offset-canvas transition active:scale-95" aria-label="Take a photo">
+            <button onClick={openCamera} className="relative grid h-40 w-40 place-items-center rounded-full bg-gradient-to-b from-[#b3121b] to-cardinal-dark text-white shadow-2xl shadow-cardinal/40 ring-4 ring-gold/70 ring-offset-4 ring-offset-canvas transition active:scale-95" aria-label="Take a photo">
               <span className="pin-ring !bg-cardinal/25" />
               <Camera size={58} strokeWidth={1.8} />
             </button>
@@ -200,7 +248,7 @@ export default function ReportPage() {
                     <p className="text-sm text-muted">{faces > 0 ? `${faces} face${faces > 1 ? "s" : ""} blurred. ` : faces < 0 ? "Couldn't run the face check on this device. " : "No faces in this photo. "}The original photo never leaves your device.</p>
                   </div>
                 </div>
-                <Actions secondary={{ label: "Retake", onClick: () => fileRef.current?.click() }} primary={{ label: "Looks good", onClick: toLocation }} />
+                <Actions secondary={{ label: "Retake", onClick: openCamera }} primary={{ label: "Looks good", onClick: afterPrivacy }} />
               </>
             )}
           </div>
@@ -220,6 +268,7 @@ export default function ReportPage() {
                   key={l.id}
                   onClick={() => {
                     setLocId(l.id);
+                    setAutoLoc(false);
                     setFloor(null);
                   }}
                   className={`flex h-14 w-full items-center justify-between rounded-2xl border-2 bg-white px-4 text-left text-[15px] font-semibold transition ${locId === l.id ? "border-cardinal" : "border-transparent"}`}
@@ -241,7 +290,7 @@ export default function ReportPage() {
                 </div>
               </div>
             )}
-            <Actions primary={{ label: "Continue", onClick: toDetails, disabled: !loc }} />
+            <Actions primary={{ label: "Continue", onClick: () => toDetails(), disabled: !loc }} />
           </div>
         )}
 
@@ -255,6 +304,30 @@ export default function ReportPage() {
               </>
             ) : (
               <>
+                {loc && (
+                  <div className="rounded-2xl bg-white p-3">
+                    <div className="flex items-center gap-3">
+                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-cardinal text-gold">
+                        <MapPin size={20} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-semibold">{loc.name}</p>
+                        <p className="truncate text-xs text-muted">{autoLoc ? gpsNote : "Chosen by you"}</p>
+                      </div>
+                      <button onClick={() => { haptic(); setStep("location"); }} className="h-9 rounded-full bg-canvas px-3 text-xs font-semibold text-cardinal">
+                        Change
+                      </button>
+                    </div>
+                    <div className="mt-3 flex items-center gap-1.5 overflow-x-auto">
+                      <span className="mr-1 text-xs font-semibold text-muted">Floor</span>
+                      {loc.floors.map((f) => (
+                        <button key={f} onClick={() => { haptic(); setFloor(floor === f ? null : f); }} className={`h-9 min-w-9 shrink-0 rounded-lg px-3 text-sm font-semibold transition ${floor === f ? "bg-cardinal text-white" : "bg-canvas"}`}>
+                          {f}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {aiFailed ? (
                   <p className="rounded-xl bg-gold/25 p-3 text-sm">AI couldn&apos;t tell what&apos;s wrong. Pick a category and add a short title.</p>
                 ) : (
