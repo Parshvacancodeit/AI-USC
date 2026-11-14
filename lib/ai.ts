@@ -17,8 +17,8 @@ const KNOWN: Record<string, { label: string; description: string }> = {
   elevator_access: { label: "Elevator / accessibility", description: "elevators, ramps, automatic doors, blocked accessible paths" },
   broken_equipment: { label: "Broken equipment", description: "lights, doors, furniture, water fountains, restrooms, leaks" },
   tech: { label: "Tech", description: "printers, Wi-Fi, screens/projectors, charging stations" },
-  grounds: { label: "Grounds & outdoor", description: "bike racks, pavement and broken bricks, benches, outdoor lighting, landscaping, irrigation" },
-  cleanliness: { label: "Trash & cleanliness", description: "overflowing trash or recycling bins, litter, spills, graffiti, pests" },
+  cleanliness: { label: "Trash & cleanliness", description: "overflowing or knocked-over trash, litter, spills, dirty restroom, out of soap or paper towels, pests" },
+  safety_hazard: { label: "Safety hazard", description: "broken glass, exposed wiring, wet floor with no sign, trip hazards (broken pavement, missing bricks, fallen racks), dark path at night, broken handrail" },
   other: { label: "Other", description: "any other campus facilities problem that fits no other category" },
 };
 /** Used when Supabase is unavailable. */
@@ -88,13 +88,18 @@ const clamp01 = (n: unknown) => Math.max(0, Math.min(1, Number(n) || 0));
 const str = (v: unknown, max: number) => String(v ?? "").slice(0, max);
 
 // ---------- Prompt 1: Analyze ----------
-export type AnalyzeOutput = AnalyzeResult & { suggested_new_category: { id: string; label: string } | null };
+export type AnalyzeOutput = AnalyzeResult & {
+  /** true → fire, injury, medical, someone in danger, or a crime: client shows "Call DPS / 911" and creates NO report. */
+  emergency: boolean;
+  suggested_new_category: { id: string; label: string } | null;
+};
 
 function analyzeSchema(ids: string[]) {
   return {
     type: "object",
     properties: {
       is_issue: { type: "boolean" },
+      emergency: { type: "boolean" },
       category: { type: "string", enum: ids },
       title: { type: "string" },
       description: { type: "string" },
@@ -103,7 +108,7 @@ function analyzeSchema(ids: string[]) {
       new_category_id: { type: "string", description: "Only if no category fits well: short snake_case id for a new category. Otherwise empty string." },
       new_category_label: { type: "string", description: "Only if no category fits well: 1-3 word human label. Otherwise empty string." },
     },
-    required: ["is_issue", "category", "title", "description", "priority", "confidence", "new_category_id", "new_category_label"],
+    required: ["is_issue", "emergency", "category", "title", "description", "priority", "confidence", "new_category_id", "new_category_label"],
   };
 }
 
@@ -119,6 +124,12 @@ Location: ${a.locationName}, floor ${a.floor || "unknown"}. Student note: ${a.no
 Decide whether the photo shows a campus facilities problem. If it does not
 (e.g. a selfie, food, a random object, or everything looks normal), set is_issue to false.
 
+EMERGENCY: if the photo or the note shows a fire or smoke, an injury, a medical emergency, anyone in
+danger, or a crime, set emergency to true and is_issue to false. Ripple does not handle these; the
+student will be told to call DPS or 911. Otherwise emergency is false.
+If the photo or note is about a person (their behavior or appearance) rather than a facility,
+set is_issue to false. Ripple never takes reports about people.
+
 Choose exactly one category:
 ${cats.map((c) => `- ${c.id}: ${c.description}`).join("\n")}
 If no category fits well, choose ${fallbackId ? `"${fallbackId}"` : "the closest one"} AND propose a new category in
@@ -133,14 +144,16 @@ Priority:
 Write a title of at most 8 words and a description of at most 2 sentences.
 Describe only what is visible. Never describe or identify people.
 Set confidence between 0 and 1.`;
-  const o = await callJson<AnalyzeResult & { new_category_id?: string; new_category_label?: string }>(
+  const o = await callJson<AnalyzeResult & { emergency?: boolean; new_category_id?: string; new_category_label?: string }>(
     [img(a.imageBase64), txt(prompt)], "report_triage", analyzeSchema(ids));
   if (!ids.includes(o.category) || !PRIORITIES.includes(o.priority)) {
     throw new AIUnavailableError("unexpected category/priority");
   }
   const newId = slug(o.new_category_id);
+  const emergency = Boolean(o.emergency);
   return {
-    is_issue: Boolean(o.is_issue),
+    is_issue: !emergency && Boolean(o.is_issue),
+    emergency,
     category: o.category as Category,
     title: str(o.title, 80),
     description: str(o.description, 400),

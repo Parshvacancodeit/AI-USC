@@ -160,9 +160,12 @@ Starting set (placeholder offices, verify):
 | `elevator_access` | Elevator / accessibility | Elevators, ramps, automatic doors, blocked accessible paths | Facilities: Elevators & Accessibility |
 | `broken_equipment` | Broken equipment | Lights, doors, furniture, water fountains, restrooms, leaks | Facilities: Maintenance |
 | `tech` | Tech | Printers, Wi-Fi, screens/projectors, charging stations | ITS |
-| `grounds` | Grounds & outdoor | Bike racks, pavement and broken bricks, benches, outdoor lighting, landscaping, irrigation | Facilities: Grounds |
-| `cleanliness` | Trash & cleanliness | Overflowing trash or recycling bins, litter, spills, graffiti, pests | Facilities: Custodial |
-| `other` | Other | Any other campus facilities problem | Facilities: Customer Service |
+| `cleanliness` | Trash & cleanliness | Overflowing or knocked-over trash, litter, spills, dirty restroom, out of soap or paper towels, pests (usually low–medium) | Facilities: Custodial |
+| `safety_hazard` | Safety hazard | Broken glass, exposed wiring, wet floor with no sign, trip hazards, dark path at night, broken handrail (usually high–urgent) | Facilities: Maintenance |
+
+**Not handled by Ripple:** fires, injuries, medical emergencies, anyone in danger, crimes, and reports about people.
+`/api/analyze` returns `emergency: true` for these; the report screen shows **"Call USC DPS: 213-740-4321 (24/7) or 911"**
+and creates no report. A report about a person comes back `is_issue: false`.
 
 Status: `open` (red) → `assigned` (amber) → `resolved` (green).
 
@@ -273,7 +276,7 @@ insert into locations (id, name, lat, lng, floors) values
 1. **Capture:** file input with `capture="environment"`; compress immediately.
 2. **Privacy:** face blur; preview "Faces blurred on your phone before upload." Continue / Retake.
 3. **Location:** preselect nearest seeded location from GPS; student confirms building and floor (student's choice wins).
-4. **AI suggestion:** `/api/analyze`; editable title, category, description, priority. Loading ≤ ~8 s. On error or `is_issue: false` → manual form (category + title).
+4. **AI suggestion:** `/api/analyze`; editable title, category, description, priority. Loading ≤ ~8 s. On error or `is_issue: false` → manual form (category + title). On `emergency: true` → full-screen "This sounds like an emergency. Call USC DPS 213-740-4321 (24/7) or 911" with tap-to-call; no report is created.
 5. **Duplicate check:** `/api/duplicates`. For matches with `same_issue && confidence >= 0.6`, show photo, title, "N students reported" → **"Yes, same issue"** / **"No, it's new."**
 6. **Submit:** `/api/reports` with `existingIssueId` or new issue fields.
 7. **Success:** "Reported. You'll get an update here when it's fixed."
@@ -305,7 +308,8 @@ JSON bodies. Images are base64 **after** compression and face blur (no `data:` p
 // req
 { imageBase64: string; mimeType: "image/jpeg"; locationName: string; floor?: string; note?: string }
 // 200
-{ is_issue: boolean; category: string;   // one of the routing.category ids
+{ is_issue: boolean; emergency: boolean; // emergency → show "Call DPS 213-740-4321 / 911", create NO report
+  category: string;   // one of the routing.category ids
   title: string; description: string; priority: "low" | "medium" | "high" | "urgent"; confidence: number;
   suggested_new_category: { id: string; label: string } | null }  // set only when no category fit well
 // 502 on AI failure → client shows manual form
@@ -368,6 +372,8 @@ Choose exactly one category:
 - {category}: {description}        ← one line per routing row, built at request time
 If no category fits well, choose "other" (or the closest one) AND propose a new category in
 new_category_id (snake_case) and new_category_label. If one fits, leave both empty.
+EMERGENCY: fire/smoke, injury, medical emergency, anyone in danger, or a crime → emergency = true, is_issue = false.
+About a person (behavior/appearance) rather than a facility → is_issue = false.
 
 Priority:
 - urgent: safety hazard (e.g. trip hazard, exposed wiring, flooding), or blocks access for wheelchair users
@@ -384,7 +390,7 @@ Set confidence between 0 and 1.
 {
   type: "object",
   properties: {
-    is_issue: { type: "boolean" },
+    is_issue: { type: "boolean" }, emergency: { type: "boolean" },
     category: { type: "string", enum: /* routing.category ids */ [] },
     title: { type: "string" }, description: { type: "string" },
     priority: { type: "string", enum: ["low", "medium", "high", "urgent"] },

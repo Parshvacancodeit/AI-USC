@@ -20,9 +20,8 @@ update routing set label = 'Tech',
   description = 'printers, Wi-Fi, screens/projectors, charging stations' where category = 'tech';
 
 insert into routing (category, label, description, team_name, team_email) values
-  ('grounds',     'Grounds & outdoor',   'bike racks, pavement and broken bricks, benches, outdoor lighting, landscaping, irrigation', 'Facilities — Grounds', null),
-  ('cleanliness', 'Trash & cleanliness', 'overflowing trash or recycling bins, litter, spills, graffiti, pests', 'Facilities — Custodial', null),
-  ('other',       'Other',               'any other campus facilities problem that fits no other category', 'Facilities — Customer Service', null)
+  ('cleanliness',   'Trash & cleanliness', 'overflowing or knocked-over trash, litter, spills, dirty restroom, out of soap or paper towels, pests', 'Facilities — Custodial', null),
+  ('safety_hazard', 'Safety hazard',       'broken glass, exposed wiring, wet floor with no sign, trip hazards (broken pavement, missing bricks, fallen racks), dark path at night, broken handrail', 'Facilities — Maintenance', null)
 on conflict (category) do nothing;
 ```
 Office names are placeholders: verify real USC offices (README §5). `issues.category` already has a foreign key
@@ -30,10 +29,11 @@ to `routing(category)`, so the DB itself rejects unknown categories; no CHECK co
 
 ### 2. `lib/types.ts`
 `export type Category = string;` (ids come from `routing`). Add to `AnalyzeResult`:
-`suggested_new_category?: { id: string; label: string } | null;`
+`emergency: boolean;` and `suggested_new_category?: { id: string; label: string } | null;`
+(Quick alternative if short on time: keep the union and add `"cleanliness" | "safety_hazard"`.)
 
 ### 3. `app/api/reports/route.ts`
-Remove the hard-coded `const CATEGORIES = [...]` check. Either look the id up in `routing`
+Remove the hard-coded `const CATEGORIES = [...]` check (or, quick version, add `"cleanliness", "safety_hazard"` to it). Either look the id up in `routing`
 (`select category ... eq category ... maybeSingle()` → 400 "Unknown category") or rely on the FK error.
 
 ### 4. Locations used in P3's test photos (not in `locations` yet)
@@ -46,9 +46,12 @@ Add them if we want real reports there. **Drop a pin for real coordinates; don't
 - Load categories at runtime: `supabase.from("routing").select("category, label, description, team_name")`
   (public read is allowed by RLS). Cache in memory; fall back to the current 3 if the request fails.
 - Keep an **icon map for known ids** and a default icon (e.g. `Tag`) for any other id:
-  `elevator_access`, `broken_equipment`, `tech`, `grounds` (e.g. `Trees`/`Bike`), `cleanliness` (e.g. `Trash2`), `other` (`CircleHelp`).
+  `elevator_access`, `broken_equipment`, `tech`, `cleanliness` (e.g. `Trash2`), `safety_hazard` (e.g. `TriangleAlert`).
 - Replace `CATEGORIES[c]` lookups with the loaded list (label = `label ?? id`, team = `team_name`).
   Every place that indexes `CATEGORIES[...]` must tolerate an unknown id (`?.` + default) so a new row never crashes a screen.
+- **Emergency screen (important):** if `/api/analyze` returns `emergency: true`, do NOT show the form or submit.
+  Show full screen: "This sounds like an emergency. Call USC DPS **213-740-4321** (24/7) or **911**." with
+  `<a href="tel:2137404321">` and `<a href="tel:911">` buttons (≥ 44 px). Number verified on dps.usc.edu.
 - Report form: category `<select>` from the loaded list. If `/api/analyze` returns `suggested_new_category`, show a small
   hint under it: "AI suggests a new category: {label}". The student still picks an existing one (we only save existing ids).
 
