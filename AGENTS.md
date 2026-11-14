@@ -10,7 +10,7 @@ Three humans each run their own agent (Claude Code, Cursor, Codex…). All agent
 ## 1. Who owns what
 | Role | Person | Files you may edit |
 |---|---|---|
-| **P1 Frontend** | Parshva (@Parshvacancodeit) | `app/page.tsx`, `app/report/**`, `app/issue/**`, `components/**`, `app/globals.css` |
+| **P1 Frontend** | Parshva (@Parshvacancodeit) | `app/page.tsx`, `app/report/**`, `app/issue/**`, `components/**`, `app/globals.css`, `lib/api.ts` (client data layer + mocks), `lib/campus.ts` (UI constants) |
 | **P2 Backend** | ________ | `lib/types.ts`, `lib/supabase-*.ts`, `lib/geo.ts`, `supabase/**`, `app/api/reports/**`, `app/api/admin/assign/**`, `app/api/admin/resolve/**`, `app/admin/**` |
 | **P3 AI** | ________ | `lib/gemini.ts`, `lib/faceBlur.ts`, `lib/image.ts`, `app/api/analyze/**`, `app/api/duplicates/**`, `app/api/admin/verify-fix/**` |
 | Shared (ask the team first) | | `package.json`, `package-lock.json`, `app/layout.tsx`, `next.config.ts`, `README.md`, `AGENTS.md` |

@@ -1,0 +1,279 @@
+// P1 client data layer. Screens call ONLY these functions.
+// Each one uses the real API route / Supabase when it exists, and a labeled MOCK otherwise,
+// so the UI works end to end before P2 and P3 land their pieces.
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import imageCompression from "browser-image-compression";
+import { CATEGORIES, locationName } from "./campus";
+import type {
+  AnalyzeRequest,
+  AnalyzeResult,
+  DuplicateMatch,
+  DuplicatesRequest,
+  Issue,
+  ReportRequest,
+  ReportResponse,
+} from "./types";
+
+const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPA_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+/** MOCK = no Supabase configured yet. Reads/writes go to a local demo store. */
+export const MOCK = !SUPA_URL || !SUPA_ANON || process.env.NEXT_PUBLIC_USE_MOCK === "1";
+
+export class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
+}
+
+// ---------- Supabase (real mode) ----------
+// TODO(P2): swap for lib/supabase-browser.ts when it lands.
+let sb: SupabaseClient | null = null;
+function supa() {
+  if (!sb) sb = createClient(SUPA_URL!, SUPA_ANON!);
+  return sb;
+}
+async function accessToken(): Promise<string> {
+  const { data } = await supa().auth.getSession();
+  if (data.session) return data.session.access_token;
+  const res = await supa().auth.signInAnonymously();
+  if (res.error || !res.data.session) throw new ApiError(401, "Could not start a session");
+  return res.data.session.access_token;
+}
+export async function ensureSession() {
+  if (!MOCK) await accessToken();
+}
+
+export function photoUrl(path: string | null, bucket = "report-photos"): string | null {
+  if (!path) return null;
+  if (path.startsWith("data:") || path.startsWith("http")) return path;
+  return `${SUPA_URL}/storage/v1/object/public/${bucket}/${path}`;
+}
+
+// ---------- Images ----------
+// TODO(P3): swap for lib/image.ts + lib/faceBlur.ts when they land.
+export async function prepareImage(file: File): Promise<{ dataUrl: string; base64: string }> {
+  const small = await imageCompression(file, {
+    maxSizeMB: 0.3,
+    maxWidthOrHeight: 1280,
+    fileType: "image/jpeg",
+    useWebWorker: true,
+  });
+  const dataUrl = await imageCompression.getDataUrlFromFile(small);
+  return { dataUrl, base64: dataUrl.split(",")[1] };
+}
+
+/** MOCK: returns the image unchanged until P3 ships MediaPipe face blur. */
+export async function blurFaces(dataUrl: string): Promise<{ dataUrl: string; facesBlurred: number }> {
+  await wait(700);
+  return { dataUrl, facesBlurred: 0 };
+}
+
+// ---------- Routes ----------
+async function post<T>(path: string, body: unknown, mock: () => Promise<T>, headers: Record<string, string> = {}): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...headers },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError(0, "You're offline");
+  }
+  if (res.status === 404) return mock(); // route not built yet
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, json.error ?? "Something went wrong");
+  return json as T;
+}
+
+export function analyze(req: AnalyzeRequest): Promise<AnalyzeResult> {
+  return post("/api/analyze", req, async () => {
+    await wait(1800); // MOCK
+    return {
+      is_issue: true,
+      category: "elevator_access",
+      title: `Elevator out of service at ${req.locationName}`,
+      description: "\"Out of Order\" sign posted on the elevator doors. Students using wheelchairs or crutches have no way to upper floors.",
+      priority: "high",
+      confidence: 0.91,
+    };
+  });
+}
+
+export async function findDuplicates(req: DuplicatesRequest): Promise<DuplicateMatch[]> {
+  const mock = async () => {
+    await wait(900);
+    const cutoff = Date.now() - 48 * 3600 * 1000;
+    return {
+      matches: readStore()
+        .filter((i) => i.location_id === req.locationId && i.category === req.category && i.status !== "resolved" && +new Date(i.created_at) > cutoff)
+        .slice(0, 3)
+        .map((i) => ({
+          issue_id: i.id,
+          same_issue: true,
+          confidence: 0.84,
+          reason: "Same sign at the same spot in both photos",
+          title: i.title,
+          reporter_count: i.reporter_count,
+          photo_url: photoUrl(i.before_photo_path) ?? "",
+        })),
+    };
+  };
+  const out = MOCK ? await mock() : await post<{ matches: DuplicateMatch[] }>("/api/duplicates", req, mock);
+  return out.matches.filter((m) => m.same_issue && m.confidence >= 0.6);
+}
+
+export async function submitReport(req: ReportRequest): Promise<ReportResponse> {
+  if (MOCK) return mockSubmit(req);
+  const token = await accessToken();
+  const out = await post<ReportResponse>("/api/reports", req, () => mockSubmit(req), { Authorization: `Bearer ${token}` });
+  addMyIssue(out.issueId);
+  return out;
+}
+
+// ---------- Reads + realtime ----------
+export async function listIssues(): Promise<Issue[]> {
+  if (MOCK) return readStore();
+  const { data, error } = await supa().from("issues").select("*").order("created_at", { ascending: false });
+  if (error) throw new ApiError(500, error.message);
+  return data as Issue[];
+}
+
+export async function getIssue(id: string): Promise<Issue | null> {
+  if (MOCK) return readStore().find((i) => i.id === id) ?? null;
+  const { data } = await supa().from("issues").select("*").eq("id", id).maybeSingle();
+  return (data as Issue) ?? null;
+}
+
+/** Calls back with every inserted/updated issue. Returns unsubscribe. */
+export function subscribeIssues(cb: (issue: Issue) => void): () => void {
+  if (MOCK) {
+    const local = (e: Event) => cb((e as CustomEvent<Issue>).detail);
+    const cross = (e: StorageEvent) => {
+      if (e.key !== STORE_KEY || !e.newValue) return;
+      const before = new Map<string, string>((JSON.parse(e.oldValue ?? "[]") as Issue[]).map((i) => [i.id, i.updated_at]));
+      (JSON.parse(e.newValue) as Issue[]).forEach((i) => before.get(i.id) !== i.updated_at && cb(i));
+    };
+    window.addEventListener("ripple:issue", local);
+    window.addEventListener("storage", cross);
+    return () => {
+      window.removeEventListener("ripple:issue", local);
+      window.removeEventListener("storage", cross);
+    };
+  }
+  const ch = supa()
+    .channel("issues-feed")
+    .on("postgres_changes", { event: "*", schema: "public", table: "issues" }, (p) => p.new && cb(p.new as Issue))
+    .subscribe();
+  return () => void supa().removeChannel(ch);
+}
+
+// ---------- "My issues" (this device) ----------
+const MY_KEY = "ripple-my-issues";
+export function myIssueIds(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(MY_KEY) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+function addMyIssue(id: string) {
+  const ids = myIssueIds();
+  if (!ids.includes(id)) localStorage.setItem(MY_KEY, JSON.stringify([id, ...ids]));
+}
+
+// ---------- MOCK store (localStorage, syncs across tabs) ----------
+const STORE_KEY = "ripple-demo-issues";
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const ago = (min: number) => new Date(Date.now() - min * 60000).toISOString();
+
+function seed(): Issue[] {
+  const base = { floor: null, description: null, after_photo_path: null, resolution_note: null, resolved_at: null, before_photo_path: null };
+  return [
+    { ...base, id: "demo-1", location_id: "leavey", floor: "2", category: "elevator_access", title: "Leavey elevator stuck on B level", description: "Doors won't open; sign says out of order.", priority: "high", status: "open", assigned_team: null, reporter_count: 4, created_at: ago(95), updated_at: ago(20) },
+    { ...base, id: "demo-2", location_id: "rth", floor: "1", category: "tech", title: "Lobby printer jammed", priority: "medium", status: "assigned", assigned_team: CATEGORIES.tech.team, reporter_count: 2, created_at: ago(300), updated_at: ago(60) },
+    { ...base, id: "demo-3", location_id: "parkside", floor: "1", category: "broken_equipment", title: "Water fountain not working", priority: "low", status: "resolved", assigned_team: CATEGORIES.broken_equipment.team, reporter_count: 3, created_at: ago(1500), updated_at: ago(120), resolved_at: ago(120) },
+  ];
+}
+
+function readStore(): Issue[] {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  const s = seed();
+  writeStore(s);
+  return s;
+}
+function writeStore(list: Issue[]) {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(list));
+  } catch {
+    // quota: drop stored photos from older issues and retry
+    localStorage.setItem(STORE_KEY, JSON.stringify(list.map((i, n) => (n > 2 ? { ...i, before_photo_path: null } : i))));
+  }
+}
+function upsert(issue: Issue) {
+  const list = readStore();
+  const idx = list.findIndex((i) => i.id === issue.id);
+  if (idx >= 0) list[idx] = issue;
+  else list.unshift(issue);
+  writeStore(list);
+  window.dispatchEvent(new CustomEvent("ripple:issue", { detail: issue }));
+}
+
+async function mockSubmit(req: ReportRequest): Promise<ReportResponse> {
+  await wait(900);
+  const now = new Date().toISOString();
+  let issue: Issue;
+  if ("existingIssueId" in req) {
+    if (myIssueIds().includes(req.existingIssueId)) throw new ApiError(409, "already_reported");
+    const cur = readStore().find((i) => i.id === req.existingIssueId);
+    if (!cur) throw new ApiError(404, "Issue not found");
+    issue = { ...cur, reporter_count: cur.reporter_count + 1, updated_at: now };
+  } else {
+    const n = req.newIssue;
+    issue = {
+      id: `demo-${Date.now()}`,
+      location_id: n.locationId,
+      floor: n.floor ?? null,
+      category: n.category,
+      title: n.title,
+      description: n.description ?? null,
+      priority: n.priority,
+      status: "open",
+      assigned_team: null,
+      reporter_count: 1,
+      before_photo_path: `data:image/jpeg;base64,${req.imageBase64}`,
+      after_photo_path: null,
+      resolution_note: null,
+      created_at: now,
+      updated_at: now,
+      resolved_at: null,
+    };
+  }
+  upsert(issue);
+  addMyIssue(issue.id);
+  return { issueId: issue.id, reporterCount: issue.reporter_count };
+}
+
+/** MOCK-only demo controls (stand in for P2's admin dashboard). */
+export function mockAdvance(id: string) {
+  const cur = readStore().find((i) => i.id === id);
+  if (!cur || cur.status === "resolved") return;
+  const now = new Date().toISOString();
+  upsert(
+    cur.status === "open"
+      ? { ...cur, status: "assigned", assigned_team: CATEGORIES[cur.category].team, updated_at: now }
+      : { ...cur, status: "resolved", resolved_at: now, updated_at: now, resolution_note: "Repaired by facilities staff" },
+  );
+}
+export function mockReset() {
+  localStorage.removeItem(STORE_KEY);
+  localStorage.removeItem(MY_KEY);
+  localStorage.removeItem("ripple-notified");
+  location.reload();
+}
+
+export const describeLocation = (i: Pick<Issue, "location_id" | "floor">) =>
+  `${locationName(i.location_id)}${i.floor ? ` · Floor ${i.floor}` : ""}`;

@@ -1,103 +1,153 @@
-import Image from "next/image";
+"use client";
+import dynamic from "next/dynamic";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import IssueCard, { Thumb } from "@/components/IssueCard";
+import StatusBadge from "@/components/StatusBadge";
+import { MOCK, describeLocation, ensureSession, listIssues, mockReset, myIssueIds, subscribeIssues } from "@/lib/api";
+import { CATEGORIES, timeAgo } from "@/lib/campus";
+import type { Issue } from "@/lib/types";
+
+const CampusMap = dynamic(() => import("@/components/CampusMap"), {
+  ssr: false,
+  loading: () => <div className="absolute inset-0 animate-pulse bg-line" />,
+});
+
+const DAY = 24 * 3600 * 1000;
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [issues, setIssues] = useState<Issue[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Issue | null>(null);
+  const [showMine, setShowMine] = useState(false);
+  const [mine, setMine] = useState<string[]>([]);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  useEffect(() => {
+    setMine(myIssueIds());
+    ensureSession().catch(() => {});
+    listIssues().then(setIssues).catch((e) => setError(e.message));
+    return subscribeIssues((issue) => {
+      setIssues((list) => [issue, ...list.filter((i) => i.id !== issue.id)]);
+      setSelected((s) => (s?.id === issue.id ? issue : s));
+      setMine(myIssueIds());
+    });
+  }, []);
+
+  const visible = useMemo(
+    () => issues.filter((i) => i.status !== "resolved" || Date.now() - +new Date(i.resolved_at ?? i.updated_at) < DAY),
+    [issues],
+  );
+  const counts = useMemo(
+    () => ({
+      open: visible.filter((i) => i.status === "open").length,
+      assigned: visible.filter((i) => i.status === "assigned").length,
+      resolved: visible.filter((i) => i.status === "resolved").length,
+    }),
+    [visible],
+  );
+  const myIssues = issues.filter((i) => mine.includes(i.id));
+
+  return (
+    <main className="relative h-dvh overflow-hidden">
+      <CampusMap issues={visible} onSelect={setSelected} focusId={selected?.id} />
+
+      {/* Header */}
+      <header className="absolute inset-x-0 top-0 z-10 px-3 pt-[max(12px,env(safe-area-inset-top))]">
+        <div className="glass flex items-center gap-3 rounded-2xl border border-white/60 px-4 py-3 shadow-lg">
+          <div className="grid h-9 w-9 place-items-center rounded-xl bg-cardinal text-lg font-black text-gold">R</div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[17px] font-bold leading-tight">Ripple</p>
+            <p className="text-xs text-muted">Live campus status · USC</p>
+          </div>
+          {MOCK && (
+            <button onClick={mockReset} className="rounded-full bg-gold/30 px-2.5 py-1 text-[10px] font-semibold text-cardinal-dark" title="Reset demo data">
+              DEMO DATA ↺
+            </button>
+          )}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+        <div className="mt-2 flex gap-2">
+          <Chip color="var(--color-open)" n={counts.open} label="open" />
+          <Chip color="var(--color-assigned)" n={counts.assigned} label="in progress" />
+          <Chip color="var(--color-resolved)" n={counts.resolved} label="fixed today" />
+        </div>
+        {error && <p className="mt-2 rounded-xl bg-white p-2 text-xs text-open">Couldn&apos;t load issues: {error}</p>}
+      </header>
+
+      {/* Bottom actions */}
+      <div className="safe-bottom absolute inset-x-0 bottom-0 z-10 space-y-2 px-3">
+        <Link
+          href="/report"
+          className="flex h-14 items-center justify-center gap-2 rounded-2xl bg-cardinal text-[17px] font-semibold text-white shadow-xl shadow-cardinal/30 active:scale-[0.98] transition"
         >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+          <span className="text-xl">📸</span> Report a problem
+        </Link>
+        <button onClick={() => setShowMine(true)} className="glass flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-white/60 text-[15px] font-semibold shadow">
+          My reports
+          <span className="rounded-full bg-cardinal px-2 py-0.5 text-xs text-white">{myIssues.length}</span>
+        </button>
+      </div>
+
+      {/* Pin sheet */}
+      {selected && (
+        <Sheet onClose={() => setSelected(null)}>
+          <div className="flex gap-3">
+            <Thumb issue={selected} size={72} />
+            <div className="min-w-0 flex-1">
+              <p className="text-[17px] font-semibold leading-snug">{selected.title}</p>
+              <p className="text-xs text-muted">
+                {CATEGORIES[selected.category].icon} {describeLocation(selected)} · {timeAgo(selected.created_at)}
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <StatusBadge status={selected.status} />
+                <span className="text-xs text-muted">👥 {selected.reporter_count} Trojans reported</span>
+              </div>
+            </div>
+          </div>
+          <Link href={`/issue/${selected.id}`} className="mt-4 flex h-12 items-center justify-center rounded-xl bg-ink text-[15px] font-semibold text-white">
+            View details
+          </Link>
+        </Sheet>
+      )}
+
+      {/* My reports */}
+      {showMine && (
+        <Sheet onClose={() => setShowMine(false)} title="My reports">
+          {myIssues.length === 0 ? (
+            <div className="py-8 text-center">
+              <p className="text-3xl">✌️</p>
+              <p className="mt-2 font-semibold">No reports yet</p>
+              <p className="text-sm text-muted">Spot something broken? Snap it. You&apos;ll be notified when it&apos;s fixed.</p>
+            </div>
+          ) : (
+            <div className="max-h-[55dvh] space-y-2 overflow-y-auto">
+              {myIssues.map((i) => (
+                <IssueCard key={i.id} issue={i} />
+              ))}
+            </div>
+          )}
+        </Sheet>
+      )}
+    </main>
+  );
+}
+
+function Chip({ color, n, label }: { color: string; n: number; label: string }) {
+  return (
+    <div className="glass flex items-center gap-1.5 rounded-full border border-white/60 px-3 py-1.5 text-xs font-medium shadow">
+      <span className="h-2 w-2 rounded-full" style={{ background: color }} />
+      <b>{n}</b> <span className="text-muted">{label}</span>
+    </div>
+  );
+}
+
+function Sheet({ children, onClose, title }: { children: React.ReactNode; onClose: () => void; title?: string }) {
+  return (
+    <div className="absolute inset-0 z-30 flex items-end bg-black/25" onClick={onClose}>
+      <div className="animate-slide-up safe-bottom w-full rounded-t-3xl bg-canvas px-4 pt-2" onClick={(e) => e.stopPropagation()}>
+        <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-line" />
+        {title && <h2 className="mb-3 text-xl font-bold">{title}</h2>}
+        {children}
+      </div>
     </div>
   );
 }
