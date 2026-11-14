@@ -42,5 +42,9 @@ await check("verify-fix: wrong passcode", "/api/admin/verify-fix", { body: { iss
 await check("verify-fix: bad issueId", "/api/admin/verify-fix", { body: { issueId: "abc", imageBase64: IMG }, headers: { "x-admin-passcode": PASS } }, 400);
 await check("verify-fix: unknown issue → 404", "/api/admin/verify-fix", { body: { issueId: id, imageBase64: IMG }, headers: { "x-admin-passcode": PASS } }, 404);
 
-console.log(failed ? `\n${failed} FAILED` : "\nall passed");
+// /api/admin/work-order — 401 without passcode, 400 without issueId
+await check("work-order: no passcode", "/api/admin/work-order", { body: { issueId: id } }, 401);
+await check("work-order: missing issueId", "/api/admin/work-order", { body: {}, headers: { "x-admin-passcode": PASS } }, 400);
+
+console.log(failed ?`\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);

@@ -332,6 +332,9 @@ POST /api/admin/assign      { issueId }                 // status='assigned', as
 POST /api/admin/verify-fix  { issueId, imageBase64 }    // upload resolution-photos/{issueId}.jpg, Claude before/after
   → { same_location: boolean; resolved: boolean; confidence: number; reason: string; after_photo_url: string }
 POST /api/admin/resolve     { issueId, note? }          // status='resolved', resolved_at=now()
+POST /api/admin/work-order  { issueId }                 // P3: Claude drafts a work order for the routed office (text only, read-only)
+  → { subject: string; body: string; urgency_note: string; to: string | null; team_name: string; ai: boolean }
+  // to = routing.team_email (null if unset). ai=false → Claude unavailable, fields come from a plain template. Never 500s because of AI.
 ```
 Resolve fires the Realtime update that shows "Fixed" on phones.
 
