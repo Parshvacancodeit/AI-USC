@@ -57,7 +57,7 @@ export function readOverlay(): Record<string, Overlay> {
 }
 
 // ---------- live mode: server actions ----------
-function adminHeaders(): Record<string, string> {
+export function adminHeaders(): Record<string, string> {
   let pass = "";
   try {
     pass = sessionStorage.getItem("ripple-admin-pass") ?? "";
@@ -65,11 +65,23 @@ function adminHeaders(): Record<string, string> {
   return { "Content-Type": "application/json", "x-admin-passcode": pass, "x-admin-name": encodeURIComponent(adminName()) };
 }
 
+/** Staff API call: returns the JSON body, or throws Error(server message). Never falls back to local storage. */
+export async function adminPost<T = Record<string, unknown>>(path: string, body: object): Promise<T> {
+  const res = await fetch(path, { method: "POST", headers: adminHeaders(), body: JSON.stringify(body) }).catch(() => null);
+  if (!res) throw new Error("You're offline");
+  const json = (await res.json().catch(() => ({}))) as T & { error?: string };
+  if (!res.ok) throw new Error(json.error ?? `Request failed (${res.status})`);
+  return json;
+}
+
+/** Shows `msg` in the console's error banner (listened to in app/admin/page.tsx). */
+export const adminError = (msg: string) => window.dispatchEvent(new CustomEvent("ripple:admin-error", { detail: msg }));
+
 async function serverAction(body: object) {
-  const res = await fetch("/api/admin/action", { method: "POST", headers: adminHeaders(), body: JSON.stringify(body) }).catch(() => null);
-  if (!res?.ok) {
-    const msg = res ? ((await res.json().catch(() => ({}))) as { error?: string }).error : "You're offline";
-    window.alert(`Couldn't save: ${msg ?? "unknown error"}`);
+  try {
+    await adminPost("/api/admin/action", body);
+  } catch (e) {
+    adminError(`Couldn't save: ${(e as Error).message}`); // shown to the admin; nothing is saved locally
   }
   window.dispatchEvent(new Event("ripple:admin"));
 }

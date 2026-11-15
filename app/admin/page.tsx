@@ -23,7 +23,6 @@ import {
   RotateCcw,
   Search,
   Settings,
-  Sparkles,
   Sun,
   Upload,
   Users,
@@ -54,7 +53,9 @@ import {
   type RejectReason,
 } from "@/lib/admin";
 import { setTheme, useTheme } from "@/lib/theme";
-import { OFFICE, routeFor } from "@/lib/routing";
+import OfficeLoop from "@/components/admin/OfficeLoop";
+import { OFFICE_CHOICES } from "@/lib/departments";
+import { routeFor } from "@/lib/routing";
 import type { Issue, Priority } from "@/lib/types";
 
 type View = "overview" | "queue" | "buildings" | "activity" | "settings";
@@ -80,7 +81,7 @@ const REJECT: Record<RejectReason, string> = {
   inappropriate: "Inappropriate content",
   outside_scope: "Outside USC's responsibility",
 };
-const OFFICES: string[] = Object.values(OFFICE);
+const OFFICES: string[] = OFFICE_CHOICES;
 
 export default function AdminPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -150,6 +151,12 @@ function Console({ onLogout }: { onLogout: () => void }) {
   const [activity, setActivity] = useState<LiveActivity | null>(null);
   const [liveErr, setLiveErr] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [actionErr, setActionErr] = useState<string | null>(null);
+  useEffect(() => {
+    const onErr = (e: Event) => setActionErr((e as CustomEvent<string>).detail);
+    window.addEventListener("ripple:admin-error", onErr);
+    return () => window.removeEventListener("ripple:admin-error", onErr);
+  }, []);
 
   useEffect(() => {
     listIssues().then(setRaw).catch(() => setRaw([]));
@@ -207,6 +214,15 @@ function Console({ onLogout }: { onLogout: () => void }) {
       </aside>
 
       <main className="min-w-0 flex-1 overflow-y-auto">
+        {actionErr && (
+          <div role="alert" className="flex items-start gap-2 border-b border-open/30 bg-open/10 px-4 py-2 text-[13px] text-open">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+            <span className="flex-1">{actionErr}</span>
+            <button onClick={() => setActionErr(null)} className="font-semibold" aria-label="Dismiss error">
+              <X size={14} />
+            </button>
+          </div>
+        )}
         {MOCK ? (
           <div className="flex items-start gap-2 border-b border-gold/30 bg-gold/10 px-4 py-2 text-[12px]">
             <AlertTriangle size={14} className="mt-0.5 shrink-0 text-gold" />
@@ -520,9 +536,13 @@ function Drawer({ issue: i, all, onClose }: { issue: AdminIssue; all: AdminIssue
               <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadAfter(e.target.files?.[0])} />
             </label>
           </div>
-          <div className="flex items-start gap-2 rounded-xl bg-surface p-3 text-xs text-muted">
-            <Sparkles size={14} className="mt-0.5 shrink-0 text-accent" /> AI before/after check is paused to save credits. It compares both photos and says whether the fix looks done; the admin still decides.
-          </div>
+          {!MOCK && (
+            <OfficeLoop
+              issue={i}
+              before={before}
+              onResolve={(note) => set({ status: "resolved", resolved_at: new Date().toISOString(), resolution_note: note }, `Resolved: ${note}`, "resolved")}
+            />
+          )}
 
           {/* Facts */}
           <Card title="Details">
@@ -562,7 +582,7 @@ function Drawer({ issue: i, all, onClose }: { issue: AdminIssue; all: AdminIssue
           {/* Actions */}
           <Card title="Actions">
             <div className="space-y-3 p-3">
-              {i.status === "open" && (
+              {MOCK && i.status === "open" && (
                 <Btn onClick={() => set({ status: "assigned", assigned_team: i.office }, `Assigned to ${i.office}`, "assigned")} primary>
                   <ArrowUpRight size={16} /> Assign to {i.office}
                 </Btn>
@@ -603,7 +623,8 @@ function Drawer({ issue: i, all, onClose }: { issue: AdminIssue; all: AdminIssue
             </div>
           </Card>
 
-          {/* Work order */}
+          {/* Work order (preview mode only; live mode uses OfficeLoop above) */}
+          {MOCK && (
           <Card title="Work order" sub="Send to the office in their existing system" action={<FileText size={16} className="text-muted" />}>
             <pre className="max-h-48 overflow-auto whitespace-pre-wrap p-3 font-mono text-[11px] leading-relaxed text-muted">{order}</pre>
             <div className="flex gap-2 border-t hairline p-3">
@@ -626,6 +647,7 @@ function Drawer({ issue: i, all, onClose }: { issue: AdminIssue; all: AdminIssue
               </a>
             </div>
           </Card>
+          )}
 
           {/* Notes */}
           <Card title="Internal notes" sub="Visible to offices only">
