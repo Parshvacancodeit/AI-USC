@@ -288,6 +288,11 @@ counts are invented. `/admin` shows "Includes demo history for illustration." wh
 
 ---
 
+### Dispatch Copilot in `/admin` (P3)
+- **Risk panel**: AI triage risk (safety risk, notify DPS, act today) with reason + confidence. Advisory.
+- **Why this office?**: client-side, from `routeFor().why`, building type (`placeKind`), problem type, AI category
+  confidence; shows "Re-routed by <name>" when a supervisor changed the office. Rules, not AI.
+
 ## 7. Screens and flows
 
 ### Report flow (`/report`) — owner: P1

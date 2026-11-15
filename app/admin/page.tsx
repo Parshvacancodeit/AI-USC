@@ -55,6 +55,7 @@ import {
 import { setTheme, useTheme } from "@/lib/theme";
 import OfficeLoop from "@/components/admin/OfficeLoop";
 import RiskPanel from "@/components/admin/RiskPanel";
+import WhyOffice from "@/components/admin/WhyOffice";
 import { OFFICE_CHOICES } from "@/lib/departments";
 import { routeFor } from "@/lib/routing";
 import type { Issue, Priority } from "@/lib/types";
@@ -572,6 +573,9 @@ function Drawer({ issue: i, all, onClose }: { issue: AdminIssue; all: AdminIssue
             </Fact>
             <Fact label="Office">
               <Select value={i.office} onChange={(o) => set({ assigned_team: o }, `Office changed to ${o}`, "rerouted")} options={[...new Set([i.office, ...OFFICES])].map((o) => [o, o])} />
+              <div className="mt-2">
+                <WhyOffice issue={i} />
+              </div>
             </Fact>
             <Fact label="Assignee">
               <input
