@@ -3,7 +3,7 @@
 /** Problem type id = a row in the `routing` table (dynamic; the AI may propose new ones). */
 export type Category = string;
 export type Priority = "low" | "medium" | "high" | "urgent";
-export type Status = "open" | "assigned" | "resolved";
+export type Status = "open" | "assigned" | "resolved" | "rejected";
 
 export interface Location {
   id: string;
@@ -30,6 +30,10 @@ export interface Issue {
   created_at: string;
   updated_at: string;
   resolved_at: string | null;
+  assignee?: string | null;
+  assigned_at?: string | null;
+  duplicate_of?: string | null;
+  rejected_reason?: string | null;
 }
 
 // POST /api/analyze

@@ -3,9 +3,10 @@
 // backend from docs/ADMIN_BACKEND_REQUIREMENTS.md exists; then each action maps 1:1 to an API route.
 import { catInfo, getLocation } from "./campus";
 import { routeFor } from "./routing";
+import { MOCK, photoUrl } from "./api";
 import type { Category, Issue, Priority } from "./types";
 
-export type AdminStatus = Issue["status"] | "rejected";
+export type AdminStatus = Issue["status"];
 export type RejectReason = "not_an_issue" | "duplicate" | "emergency_dps" | "inappropriate" | "outside_scope";
 
 export type AdminEvent = {
@@ -55,7 +56,43 @@ export function readOverlay(): Record<string, Overlay> {
   }
 }
 
+// ---------- live mode: server actions ----------
+function adminHeaders(): Record<string, string> {
+  let pass = "";
+  try {
+    pass = sessionStorage.getItem("ripple-admin-pass") ?? "";
+  } catch {}
+  return { "Content-Type": "application/json", "x-admin-passcode": pass, "x-admin-name": encodeURIComponent(adminName()) };
+}
+
+async function serverAction(body: object) {
+  const res = await fetch("/api/admin/action", { method: "POST", headers: adminHeaders(), body: JSON.stringify(body) }).catch(() => null);
+  if (!res?.ok) {
+    const msg = res ? ((await res.json().catch(() => ({}))) as { error?: string }).error : "You're offline";
+    window.alert(`Couldn't save: ${msg ?? "unknown error"}`);
+  }
+  window.dispatchEvent(new Event("ripple:admin"));
+}
+
+export type Activity = {
+  events: { issue_id: string; actor_name: string; type: AdminEvent["type"]; text: string; created_at: string }[];
+  notes: { issue_id: string; author_name: string; text: string; created_at: string }[];
+};
+
+export async function loadActivity(): Promise<Activity> {
+  const res = await fetch("/api/admin/activity", { headers: adminHeaders() });
+  if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? "Couldn't load activity");
+  return res.json();
+}
+
 export function writeOverlay(id: string, patch: Overlay, event?: Omit<AdminEvent, "at" | "by">) {
+  if (!MOCK) {
+    const { resolved_at: _r, notes: _n, events: _e, ...rest } = patch;
+    void _r;
+    void _n;
+    void _e;
+    return void serverAction({ issueId: id, patch: rest, event });
+  }
   const all = readOverlay();
   const cur = all[id] ?? {};
   const by = adminName();
@@ -73,6 +110,7 @@ export function writeOverlay(id: string, patch: Overlay, event?: Omit<AdminEvent
 }
 
 export function addNote(id: string, text: string) {
+  if (!MOCK) return void serverAction({ issueId: id, note: text, event: { type: "note", text } });
   const cur = readOverlay()[id] ?? {};
   writeOverlay(id, { notes: [...(cur.notes ?? []), { at: new Date().toISOString(), by: adminName(), text }] }, { type: "note", text });
 }
@@ -90,7 +128,7 @@ export function adminName() {
   }
 }
 
-export function merge(issues: Issue[], ov: Record<string, Overlay>): AdminIssue[] {
+export function merge(issues: Issue[], ov: Record<string, Overlay>, live?: Activity | null): AdminIssue[] {
   return issues.map((i) => {
     const o = ov[i.id] ?? {};
     const category = o.category ?? i.category;
@@ -103,12 +141,17 @@ export function merge(issues: Issue[], ov: Record<string, Overlay>): AdminIssue[
       assigned_team: o.assigned_team ?? i.assigned_team,
       resolution_note: o.resolution_note ?? i.resolution_note,
       resolved_at: o.resolved_at ?? i.resolved_at,
-      assignee: o.assignee ?? null,
-      duplicate_of: o.duplicate_of ?? null,
-      rejected_reason: o.rejected_reason ?? null,
-      after_photo: o.after_photo ?? null,
-      notes: o.notes ?? [],
-      events: [{ at: i.created_at, by: "Student", type: "created", text: `Reported by ${i.reporter_count} student${i.reporter_count > 1 ? "s" : ""}` } as AdminEvent, ...(o.events ?? [])],
+      assignee: o.assignee ?? i.assignee ?? null,
+      duplicate_of: o.duplicate_of ?? i.duplicate_of ?? null,
+      rejected_reason: (o.rejected_reason ?? i.rejected_reason ?? null) as RejectReason | null,
+      after_photo: o.after_photo ?? photoUrl(i.after_photo_path, "resolution-photos"),
+      notes: live ? live.notes.filter((n) => n.issue_id === i.id).map((n) => ({ at: n.created_at, by: n.author_name, text: n.text })) : (o.notes ?? []),
+      events: [
+        ...(live?.events.some((e) => e.issue_id === i.id && e.type === "created")
+          ? []
+          : [{ at: i.created_at, by: "Student", type: "created", text: `Reported by ${i.reporter_count} student${i.reporter_count > 1 ? "s" : ""}` } as AdminEvent]),
+        ...(live ? live.events.filter((e) => e.issue_id === i.id).map((e) => ({ at: e.created_at, by: e.actor_name, type: e.type, text: e.text })) : (o.events ?? [])),
+      ],
       office: o.assigned_team ?? i.assigned_team ?? routeFor(category, i.location_id, i.floor).office,
       locationLabel: `${loc?.name ?? "USC campus"}${i.floor ? ` · Floor ${i.floor}` : ""}`,
       lat: loc?.lat ?? null,

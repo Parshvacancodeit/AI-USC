@@ -9,8 +9,8 @@ import type { Theme } from "@/lib/theme";
 import type { Issue, Status } from "@/lib/types";
 import { USC_BUILDINGS } from "@/lib/usc-buildings";
 
-const HEX: Record<Status, string> = { open: "#ff453a", assigned: "#ffb020", resolved: "#30d158" };
-const RANK: Record<Status, number> = { open: 3, assigned: 2, resolved: 1 };
+const HEX: Record<Status, string> = { open: "#ff453a", assigned: "#ffb020", resolved: "#30d158", rejected: "#8e8e98" };
+const RANK: Record<Status, number> = { open: 3, assigned: 2, resolved: 1, rejected: 0 };
 const CAMERA = { pitch: 45, bearing: -17 };
 // USC + ~4 miles each way
 const BOUNDS: [[number, number], [number, number]] = [

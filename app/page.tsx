@@ -20,7 +20,7 @@ const CampusMap = dynamic(() => import("@/components/CampusMap"), {
 });
 
 const DAY = 24 * 3600 * 1000;
-const RANK = { open: 0, assigned: 1, resolved: 2 } as const;
+const RANK = { open: 0, assigned: 1, resolved: 2, rejected: 3 } as const;
 
 export default function Live() {
   const [issues, setIssues] = useState<Issue[]>([]);
@@ -46,7 +46,7 @@ export default function Live() {
     });
   }, []);
 
-  const recent = useMemo(() => issues.filter((i) => i.status !== "resolved" || Date.now() - +new Date(i.resolved_at ?? i.updated_at) < DAY), [issues]);
+  const recent = useMemo(() => issues.filter((i) => i.status !== "rejected").filter((i) => i.status !== "resolved" || Date.now() - +new Date(i.resolved_at ?? i.updated_at) < DAY), [issues]);
   const visible = useMemo(
     () => (filter ? recent.filter((i) => i.category === filter) : recent).sort((a, b) => RANK[a.status] - RANK[b.status] || +new Date(b.updated_at) - +new Date(a.updated_at)),
     [recent, filter],

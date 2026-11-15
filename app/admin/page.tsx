@@ -32,13 +32,15 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CategoryIcon, RippleLogo } from "@/components/Icon";
-import { listIssues, photoUrl, prepareImage, subscribeIssues } from "@/lib/api";
+import { MOCK, listIssues, photoUrl, prepareImage, subscribeIssues } from "@/lib/api";
 import { PRIORITIES, catInfo, categoryIds, timeAgo } from "@/lib/campus";
 import {
   ADMIN_NAME_KEY,
   addNote,
   buildingHealth,
   clearOverlay,
+  loadActivity,
+  type Activity as LiveActivity,
   fmtHours,
   hoursBetween,
   merge,
@@ -105,9 +107,10 @@ function Gate({ onIn }: { onIn: () => void }) {
     setErr(null);
     const res = await fetch("/api/admin/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ passcode: code }) }).catch(() => null);
     setBusy(false);
-    if (!res?.ok) return setErr("Wrong passcode");
+    if (!res?.ok) return setErr(res ? (((await res.json().catch(() => ({}))) as { error?: string }).error ?? "Wrong passcode") : "You're offline");
     localStorage.setItem(ADMIN_NAME_KEY, name.trim() || "Office admin");
     sessionStorage.setItem("ripple-admin", "1");
+    sessionStorage.setItem("ripple-admin-pass", code);
     onIn();
   }
   return (
@@ -144,12 +147,22 @@ function Console({ onLogout }: { onLogout: () => void }) {
   const [view, setView] = useState<View>("overview");
   const [raw, setRaw] = useState<Issue[] | null>(null);
   const [ov, setOv] = useState(readOverlay);
+  const [activity, setActivity] = useState<LiveActivity | null>(null);
+  const [liveErr, setLiveErr] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
 
   useEffect(() => {
     listIssues().then(setRaw).catch(() => setRaw([]));
     const off = subscribeIssues((issue) => setRaw((l) => [issue, ...(l ?? []).filter((i) => i.id !== issue.id)]));
-    const on = () => setOv(readOverlay());
+    const refresh = () => {
+      if (MOCK) return;
+      loadActivity()
+        .then((a) => (setActivity(a), setLiveErr(null)))
+        .catch((e) => setLiveErr(e.message));
+      listIssues().then(setRaw).catch(() => {});
+    };
+    refresh();
+    const on = () => (MOCK ? setOv(readOverlay()) : refresh());
     window.addEventListener("ripple:admin", on);
     return () => {
       off();
@@ -157,7 +170,7 @@ function Console({ onLogout }: { onLogout: () => void }) {
     };
   }, []);
 
-  const list = useMemo(() => merge(raw ?? [], ov), [raw, ov]);
+  const list = useMemo(() => (MOCK ? merge(raw ?? [], ov) : merge(raw ?? [], {}, activity)), [raw, ov, activity]);
   const current = list.find((i) => i.id === openId) ?? null;
 
   return (
@@ -194,12 +207,22 @@ function Console({ onLogout }: { onLogout: () => void }) {
       </aside>
 
       <main className="min-w-0 flex-1 overflow-y-auto">
-        <div className="flex items-start gap-2 border-b border-gold/30 bg-gold/10 px-4 py-2 text-[12px]">
-          <AlertTriangle size={14} className="mt-0.5 shrink-0 text-gold" />
-          <span>
-            <b>Preview mode.</b> Live reports are real; your actions are saved in this browser only until the backend is connected. Students aren&apos;t notified yet.
-          </span>
-        </div>
+        {MOCK ? (
+          <div className="flex items-start gap-2 border-b border-gold/30 bg-gold/10 px-4 py-2 text-[12px]">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0 text-gold" />
+            <span>
+              <b>Preview mode.</b> No database configured: actions are saved in this browser only.
+            </span>
+          </div>
+        ) : liveErr ? (
+          <div className="flex items-start gap-2 border-b border-open/30 bg-open/10 px-4 py-2 text-[12px] text-open">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0" /> {liveErr}. Sign out and sign in again with the staff passcode.
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 border-b border-resolved/30 bg-resolved/10 px-4 py-2 text-[12px]">
+            <span className="live-dot h-2 w-2 rounded-full bg-resolved" /> <b>Live.</b> Actions update the database instantly; resolving notifies every reporter.
+          </div>
+        )}
         <div className="mx-auto max-w-6xl p-4 md:p-6">
           {raw === null ? (
             <div className="grid gap-3 md:grid-cols-3">
@@ -553,7 +576,7 @@ function Drawer({ issue: i, all, onClose }: { issue: AdminIssue; all: AdminIssue
                   >
                     <Check size={16} /> Mark resolved {i.after_photo ? "" : "(no after photo)"}
                   </Btn>
-                  <p className="text-[11px] text-muted">With the backend, resolving sends every reporter the &ldquo;Fixed&rdquo; alert.</p>
+                  <p className="text-[11px] text-muted">{MOCK ? "Preview: students aren’t notified." : "Resolving sends every reporter the “Fixed” alert."}</p>
                 </div>
               )}
               {(i.status === "resolved" || i.status === "rejected") && (

@@ -89,6 +89,7 @@ export const STATUS: Record<Status, { label: string; color: string; bg: string }
   open: { label: "Open", color: "var(--color-open)", bg: "rgba(255,69,58,0.16)" },
   assigned: { label: "In progress", color: "var(--color-assigned)", bg: "rgba(255,176,32,0.16)" },
   resolved: { label: "Fixed", color: "var(--color-resolved)", bg: "rgba(48,209,88,0.16)" },
+  rejected: { label: "Closed", color: "var(--color-muted)", bg: "rgba(142,142,152,0.16)" },
 };
 
 export function timeAgo(iso: string) {

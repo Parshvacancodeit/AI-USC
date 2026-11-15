@@ -229,7 +229,7 @@ export function subscribeIssues(cb: (issue: Issue) => void): () => void {
     };
   }
   const ch = supa()
-    .channel("issues-feed")
+    .channel(`issues-${Math.random().toString(36).slice(2)}`) // unique: several screens listen at once
     .on("postgres_changes", { event: "*", schema: "public", table: "issues" }, (p) => {
       const issue = p.new as Issue;
       if (!issue?.id) return;

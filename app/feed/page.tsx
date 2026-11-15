@@ -36,7 +36,7 @@ export default function Feed() {
   }, []);
 
   const groups = useMemo(() => {
-    const list = (issues ?? []).filter((i) => seg === "all" || i.status === seg).sort((a, b) => +new Date(b.updated_at) - +new Date(a.updated_at));
+    const list = (issues ?? []).filter((i) => i.status !== "rejected").filter((i) => seg === "all" || i.status === seg).sort((a, b) => +new Date(b.updated_at) - +new Date(a.updated_at));
     const out: Record<string, Issue[]> = {};
     list.forEach((i) => (out[group(i.updated_at)] ??= []).push(i));
     return Object.entries(out);
