@@ -3,7 +3,7 @@ import { CheckCircle2, ChevronRight, Layers, Moon, RotateCcw, Sun } from "lucide
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CategoryIcon, RippleLogo } from "@/components/Icon";
+import { CategoryIcon, RippleLogo, Wordmark } from "@/components/Icon";
 import { Thumb } from "@/components/IssueCard";
 import Sheet from "@/components/Sheet";
 import StatusBadge from "@/components/StatusBadge";
@@ -102,13 +102,13 @@ export default function Live() {
 
       {/* Header */}
       <header className="pointer-events-none absolute inset-x-0 top-0 z-10 px-3 pt-[max(10px,env(safe-area-inset-top))]">
-        <div className="panel pointer-events-auto flex items-center gap-3 rounded-[22px] px-3 py-2.5 shadow-2xl animate-fade-up">
-          <RippleLogo size={36} />
+        <div className="panel pointer-events-auto flex items-center gap-3 rounded-2xl px-3 py-2 shadow-lg animate-fade-up">
+          <RippleLogo size={34} />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <p className="text-[17px] font-bold tracking-tight">Ripple</p>
-              <span className="flex items-center gap-1 rounded-md bg-open px-1.5 py-0.5 text-[9px] font-extrabold tracking-[0.12em] text-white">
-                <span className="live-dot h-1.5 w-1.5 rounded-full bg-white" /> LIVE
+              <Wordmark className="!text-[20px]" />
+              <span className="flex items-center gap-1 rounded-full bg-cardinal px-1.5 py-0.5 text-[9px] font-extrabold tracking-[0.14em] text-white">
+                <span className="live-dot h-1.5 w-1.5 rounded-full bg-gold" /> USC LIVE
               </span>
             </div>
             <p className="truncate text-[12px] text-muted">
@@ -149,9 +149,9 @@ export default function Live() {
       <div className="absolute inset-x-0 z-10" style={{ bottom: "calc(80px + env(safe-area-inset-bottom))" }}>
         <div ref={rail} onScroll={onRailScroll} className="flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 pt-1">
           {!loaded &&
-            [0, 1].map((n) => <div key={n} className="shimmer h-[118px] w-[84%] shrink-0 rounded-[24px]" />)}
+            [0, 1].map((n) => <div key={n} className="shimmer h-[114px] w-[84%] shrink-0 rounded-[18px]" />)}
           {loaded && visible.length === 0 && (
-            <div className="panel flex h-[118px] w-full shrink-0 items-center gap-4 rounded-[24px] px-5 animate-fade-up">
+            <div className="panel flex h-[114px] w-full shrink-0 items-center gap-4 rounded-[18px] px-5 animate-fade-up">
               <div className="grid h-12 w-12 place-items-center rounded-full bg-resolved/15 text-resolved">
                 <CheckCircle2 size={26} />
               </div>
@@ -167,16 +167,16 @@ export default function Live() {
               data-id={i.id}
               href={`/issue/${i.id}`}
               onClick={() => haptic()}
-              className={`panel flex h-[118px] w-[84%] shrink-0 snap-start gap-3 rounded-[24px] p-3 transition animate-fade-up ${focus === i.id ? "ring-1 ring-white/30" : ""}`}
+              className={`panel flex h-[114px] w-[84%] shrink-0 snap-start gap-3 rounded-[18px] p-3 transition animate-fade-up ${focus === i.id ? "ring-2 ring-cardinal" : ""}`}
               style={{ animationDelay: `${Math.min(n, 4) * 60 + 150}ms` }}
             >
-              <Thumb issue={i} size={94} />
+              <Thumb issue={i} size={84} />
               <div className="flex min-w-0 flex-1 flex-col">
                 <div className="flex items-center justify-between gap-2">
                   <StatusBadge status={i.status} />
                   <span className="text-[11px] text-muted">{timeAgo(i.updated_at)}</span>
                 </div>
-                <p className="mt-1.5 line-clamp-2 text-[15px] font-semibold leading-snug">{i.title}</p>
+                <p className="mt-1 line-clamp-2 text-[14px] font-semibold leading-snug">{i.title}</p>
                 <div className="mt-auto flex items-center justify-between">
                   <span className="truncate text-xs text-muted">{describeLocation(i)}</span>
                   <Reporters n={i.reporter_count} />

@@ -232,7 +232,7 @@ export default function ReportPage() {
             </div>
             <div className="grid w-full grid-cols-3 gap-2 text-xs">
               {categoryIds().slice(0, 3).map((id) => CATEGORIES[id]).map((c) => (
-                <div key={c.label} className="rounded-2xl bg-surface p-3">
+                <div key={c.label} className="py-1">
                   <c.Icon size={20} className="mx-auto text-accent" />
                   <p className="mt-1 font-semibold">{c.label}</p>
                 </div>

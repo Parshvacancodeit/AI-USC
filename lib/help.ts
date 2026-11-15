@@ -313,3 +313,31 @@ export async function fetchRelated(postId: string): Promise<RelatedItem[]> {
 
 /** Short place name for compact UI. */
 export const shortPlace = (n: string) => n.replace(/ of Letters, Arts and Sciences$/, "").replace(/ of Engineering/, "");
+
+// ---------- Votes (Reddit-style). Server: /api/help/vote, schema: supabase/help_votes.sql ----------
+const VOTE_KEY = "ripple-help-votes";
+export function myVotes(): Record<string, 1 | -1> {
+  try {
+    return JSON.parse(localStorage.getItem(VOTE_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+export async function votePost(postId: string, value: 1 | 0 | -1): Promise<number> {
+  const all = myVotes();
+  if (value === 0) delete all[postId];
+  else all[postId] = value;
+  try {
+    localStorage.setItem(VOTE_KEY, JSON.stringify(all));
+  } catch {}
+  const r = await send<{ score: number }>("/api/help/vote", { postId, value });
+  return r.score;
+}
+/** Score if the DB has votes set up (help_posts.score), else null → hide vote UI. */
+export const scoreOf = (p: HelpPost) => ((p as HelpPost & { score?: number }).score ?? null);
+/** Reddit-style "hot": score + replies, decayed by age. */
+export function hot(p: HelpPost) {
+  const s = (scoreOf(p) ?? 0) + p.reply_count * 0.6 + 1;
+  const h = (Date.now() - +new Date(p.created_at)) / 3_600_000;
+  return s / Math.pow(h + 2, 1.4);
+}

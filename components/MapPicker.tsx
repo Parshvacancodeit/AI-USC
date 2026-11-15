@@ -4,7 +4,7 @@ import maplibregl from "maplibre-gl";
 import { MapPin } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { USC_CENTER } from "@/lib/campus";
-import { CAMPUS_RING } from "@/lib/campus-geo";
+import { CAMPUS_RING, VILLAGE_RING } from "@/lib/campus-geo";
 import { haptic } from "@/lib/haptics";
 import { locate, type Spot } from "@/lib/locate";
 import { useTheme } from "@/lib/theme";
@@ -62,7 +62,7 @@ export default function MapPicker({ start, center, onChange }: { start?: { lat: 
       cb.current(s);
     };
     m.on("load", () => {
-      m.addSource("campus", { type: "geojson", data: { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: CAMPUS_RING } } });
+      m.addSource("campus", { type: "geojson", data: { type: "FeatureCollection", features: [CAMPUS_RING, VILLAGE_RING].map((r) => ({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: r } })) } });
       m.addLayer({ id: "campus", type: "line", source: "campus", paint: { "line-color": "#FFCC00", "line-width": 2, "line-opacity": 0.8 } });
       m.addSource("hit", { type: "geojson", data: EMPTY });
       m.addLayer({ id: "hit-fill", type: "fill", source: "hit", paint: { "fill-color": "#ff2a36", "fill-opacity": 0.25 } });

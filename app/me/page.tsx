@@ -55,7 +55,7 @@ export default function Me() {
       <LargeTitle title="Me" />
       <div className="space-y-6 px-4">
         {/* Profile */}
-        <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#5a0008] via-cardinal to-[#2a0004] p-5 animate-fade-up">
+        <section className="relative -mx-4 overflow-hidden bg-cardinal px-5 pb-5 pt-4 text-white animate-fade-up">
           <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full border-[14px] border-gold/15" />
           <div className="absolute -right-2 -top-2 h-24 w-24 rounded-full border-[10px] border-gold/20" />
           <div className="relative flex items-center gap-4">
@@ -76,7 +76,7 @@ export default function Me() {
             </div>
             <p className="mt-1.5 text-[11px] text-white/70">{next ? `${next.min - karma} karma to ${next.name}` : "Top tier reached. Fight On!"}</p>
           </div>
-          <div className="relative mt-4 grid grid-cols-3 gap-2 text-white">
+          <div className="relative mt-4 grid grid-cols-3 border-t border-white/15 pt-3 text-white">
             <Stat n={mine?.length ?? 0} label="Reports" />
             <Stat n={fixed} label="Fixed" />
             <Stat n={karma} label="Karma" gold />
@@ -88,7 +88,7 @@ export default function Me() {
           <h2 className="mb-2 px-1 text-[13px] font-semibold uppercase tracking-wider text-muted">Badges</h2>
           <div className="-mx-4 flex gap-2 overflow-x-auto px-4">
             {badges.map((b) => (
-              <div key={b.id} className={`flex w-[96px] shrink-0 flex-col items-center gap-1.5 rounded-2xl bg-surface p-3 text-center ${b.earned ? "" : "opacity-45"}`}>
+              <div key={b.id} className={`flex w-[88px] shrink-0 flex-col items-center gap-1.5 py-2 text-center ${b.earned ? "" : "opacity-45"}`}>
                 <div className={`grid h-11 w-11 place-items-center rounded-full ${b.earned ? "bg-gradient-to-br from-gold to-[#e08a00] text-black" : "bg-surface-2 text-muted"}`}>
                   <b.Icon size={20} />
                 </div>
@@ -107,7 +107,7 @@ export default function Me() {
           <h2 className="mb-2 flex items-center gap-1.5 px-1 text-[13px] font-semibold uppercase tracking-wider text-muted">
             <Trophy size={14} className="text-gold" /> Campus leaderboard
           </h2>
-          <div className="overflow-hidden rounded-2xl bg-surface">
+          <div className="border-y hairline">
             {board === null && <div className="shimmer h-24" />}
             {board?.length === 0 && <p className="p-4 text-sm text-muted">No reports yet. Be the first Trojan on the board.</p>}
             {board?.slice(0, 10).map((p, n) => (
@@ -149,7 +149,7 @@ export default function Me() {
         {/* Settings */}
         <section className="animate-fade-up" style={{ animationDelay: "160ms" }}>
           <h2 className="mb-2 px-1 text-[13px] font-semibold uppercase tracking-wider text-muted">Settings</h2>
-          <div className="overflow-hidden rounded-2xl bg-surface">
+          <div className="border-y hairline">
             <Row icon={<Moon size={17} />} tint="#5e5ce6" label="Appearance" sub={theme === "dark" ? "Dark" : "Light"}>
               <div className="grid grid-cols-2 gap-0.5 rounded-lg bg-surface-2 p-0.5">
                 {(["light", "dark"] as const).map((t) => (
@@ -189,7 +189,7 @@ export default function Me() {
 
 function Stat({ n, label, gold }: { n: number; label: string; gold?: boolean }) {
   return (
-    <div className="rounded-2xl bg-black/25 px-3 py-2.5 text-center backdrop-blur">
+    <div className="border-l border-white/15 px-3 py-1 text-center first:border-l-0">
       <p className={`text-2xl font-extrabold tabular-nums ${gold ? "text-gradient-gold" : ""}`}>{n}</p>
       <p className="text-[11px] font-medium uppercase tracking-wider text-white/60">{label}</p>
     </div>

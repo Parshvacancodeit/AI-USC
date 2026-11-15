@@ -41,24 +41,24 @@
 }
 
 :root[data-theme="light"] {
-  --t-accent: #c8102e;
-  --t-gold: #b88a00;
-  --t-ink: #111114;
-  --t-muted: #6b6b75;
-  --t-line: #e5e5ea;
-  --t-canvas: #f2f2f7;
+  --t-accent: #990000;
+  --t-gold: #a87b00;
+  --t-ink: #1a1414;
+  --t-muted: #6f6866;
+  --t-line: #ebe6e1;
+  --t-canvas: #faf8f5;
   --t-surface: #ffffff;
-  --t-surface-2: #f2f2f7;
-  --t-open: #e5372f;
-  --t-assigned: #e08e00;
-  --t-resolved: #1fa65a;
-  --t-glass: rgba(255, 255, 255, 0.78);
+  --t-surface-2: #f3efea;
+  --t-open: #d92d20;
+  --t-assigned: #d97706;
+  --t-resolved: #15803d;
+  --t-glass: rgba(255, 255, 255, 0.82);
+  --t-glass-strong: rgba(250, 248, 245, 0.92);
   --t-panel: rgba(255, 255, 255, 0.97);
-  --t-glass-strong: rgba(250, 250, 252, 0.9);
-  --t-hair: rgba(0, 0, 0, 0.08);
-  --t-shim-a: #e9e9ee;
-  --t-shim-b: #f7f7fa;
-  --t-scrim: rgba(255, 255, 255, 0.65);
+  --t-hair: rgba(60, 20, 20, 0.09);
+  --t-shim-a: #efebe6;
+  --t-shim-b: #f8f6f3;
+  --t-scrim: rgba(250, 248, 245, 0.7);
   color-scheme: light;
 }
 
@@ -205,3 +205,14 @@ body {
 .maplibregl-ctrl-attrib { font-size: 9px; background: rgba(0, 0, 0, 0.4) !important; color: #888 !important; }
 .maplibregl-ctrl-attrib a { color: #aaa !important; }
 :root:not([data-theme="light"]) .maplibregl-ctrl-attrib-button { filter: invert(1); }
+
+/* ---------- brand + motion ---------- */
+.cardinal-bar { background: linear-gradient(90deg, #990000, #b3121b 60%, #990000); }
+.gold-rule { height: 2px; background: linear-gradient(90deg, transparent, #ffcc00, transparent); }
+@keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 100% { transform: scale(1); } }
+.animate-pop { animation: pop 0.32s cubic-bezier(0.2, 0.9, 0.3, 1.4); }
+@keyframes rise { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+.rise { animation: rise 0.4s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+.press { transition: transform 0.12s ease; }
+.press:active { transform: scale(0.97); }
+.tab-dot { width: 4px; height: 4px; border-radius: 9999px; background: var(--color-accent); transition: transform 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.4); }

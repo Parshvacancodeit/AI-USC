@@ -30,7 +30,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CategoryIcon, RippleLogo } from "@/components/Icon";
+import { CategoryIcon, RippleLogo, Wordmark } from "@/components/Icon";
 import { MOCK, listIssues, photoUrl, prepareImage, subscribeIssues } from "@/lib/api";
 import { PRIORITIES, catInfo, categoryIds, timeAgo } from "@/lib/campus";
 import {
@@ -182,13 +182,14 @@ function Console({ onLogout }: { onLogout: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-canvas md:flex-row">
+      <div className="cardinal-bar fixed inset-x-0 top-0 z-[61] h-[3px]" />
       {/* Sidebar / top nav */}
       <aside className="flex shrink-0 flex-col border-b hairline bg-surface md:w-60 md:border-b-0 md:border-r">
         <div className="flex items-center gap-2.5 px-4 py-3 md:py-5">
-          <RippleLogo size={32} />
+          <RippleLogo size={30} />
           <div className="min-w-0 flex-1">
-            <p className="font-bold leading-tight">Office Console</p>
-            <p className="text-xs text-muted">Ripple · USC</p>
+            <Wordmark className="!text-[18px]" />
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Office console</p>
           </div>
           <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="grid h-8 w-8 place-items-center rounded-full bg-surface-2" aria-label="Toggle theme">
             {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
@@ -278,7 +279,7 @@ function Overview({ list, open, go }: { list: AdminIssue[]; open: (id: string) =
   return (
     <div className="space-y-6 animate-fade-up">
       <Title title="Overview" sub="What's broken on campus right now" />
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-y-4 rounded-xl border hairline bg-surface py-4 lg:grid-cols-6">
         <Kpi label="Open" value={m.open} color="var(--color-open)" Icon={Inbox} />
         <Kpi label="In progress" value={m.assigned} color="var(--color-assigned)" Icon={Clock} />
         <Kpi label="Fixed today" value={m.fixedToday} color="var(--color-resolved)" Icon={Check} />
@@ -711,10 +712,10 @@ function Title({ title, sub, right }: { title: string; sub?: string; right?: Rea
 
 function Card({ title, sub, action, children, className = "" }: { title: string; sub?: string; action?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
-    <section className={`overflow-hidden rounded-2xl bg-surface ${className}`}>
-      <div className="flex items-center justify-between gap-2 border-b hairline px-3 py-2.5">
+    <section className={`overflow-hidden rounded-xl border hairline bg-surface ${className}`}>
+      <div className="flex items-center justify-between gap-2 border-b hairline px-4 py-3">
         <div>
-          <p className="text-sm font-bold">{title}</p>
+          <p className="text-[13px] font-bold uppercase tracking-wider">{title}</p>
           {sub && <p className="text-xs text-muted">{sub}</p>}
         </div>
         {action}
@@ -726,8 +727,8 @@ function Card({ title, sub, action, children, className = "" }: { title: string;
 
 function Kpi({ label, value, color, Icon }: { label: string; value: string | number; color: string; Icon: typeof Inbox }) {
   return (
-    <div className="rounded-2xl bg-surface p-4">
-      <Icon size={16} style={{ color }} />
+    <div className="border-l hairline px-4 py-1 first:border-l-0">
+      <Icon size={15} style={{ color }} />
       <p className="mt-2 text-2xl font-extrabold tabular-nums" style={{ color }}>
         {value}
       </p>

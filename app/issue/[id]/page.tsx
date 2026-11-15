@@ -1,5 +1,5 @@
 "use client";
-import { Check, MapPin, MessageSquare, Users } from "lucide-react";
+import { Check, MapPin, MessageSquare, Navigation, Users } from "lucide-react";
 import { useParams } from "next/navigation";
 import { CategoryIcon } from "@/components/Icon";
 import { haptic } from "@/lib/haptics";
@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import StatusBadge from "@/components/StatusBadge";
 import StepHeader from "@/components/StepHeader";
 import { MOCK, describeLocation, getIssue, mockAdvance, photoUrl, subscribeIssues } from "@/lib/api";
-import { CATEGORIES, timeAgo } from "@/lib/campus";
+import { CATEGORIES, getLocation, timeAgo } from "@/lib/campus";
 import type { Issue } from "@/lib/types";
 
 export default function IssuePage() {
@@ -66,6 +66,17 @@ export default function IssuePage() {
             <span className="inline-flex items-center gap-1"><CategoryIcon category={issue.category} size={14} className="text-accent" /> {cat.label}</span> · <span className="inline-flex items-center gap-1"><MapPin size={14} className="text-accent" /> {describeLocation(issue)}</span>
           </p>
           {issue.description && <p className="mt-3 text-[15px] leading-relaxed">{issue.description}</p>}
+          {getLocation(issue.location_id) && (
+            <a
+              href={`https://www.google.com/maps/dir/?api=1&destination=${getLocation(issue.location_id)!.lat},${getLocation(issue.location_id)!.lng}&travelmode=walking`}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => haptic()}
+              className="press mt-4 inline-flex h-10 items-center gap-1.5 rounded-full bg-cardinal px-4 text-[14px] font-semibold text-white"
+            >
+              <Navigation size={15} /> Directions
+            </a>
+          )}
         </div>
 
         <div className="rounded-2xl bg-surface p-4">

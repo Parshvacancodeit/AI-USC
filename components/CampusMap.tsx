@@ -4,7 +4,7 @@
 import maplibregl from "maplibre-gl";
 import { useEffect, useRef } from "react";
 import { FLOOR_HEIGHT_M, USC_CENTER, getLocation } from "@/lib/campus";
-import { CAMPUS_RING } from "@/lib/campus-geo";
+import { CAMPUS_RING, VILLAGE_RING } from "@/lib/campus-geo";
 import type { Theme } from "@/lib/theme";
 import type { Issue, Status } from "@/lib/types";
 import { USC_BUILDINGS } from "@/lib/usc-buildings";
@@ -35,8 +35,9 @@ function scaleRing(ring: [number, number][], k: number): [number, number][] {
 }
 
 function campusBounds(): [[number, number], [number, number]] {
-  const xs = CAMPUS_RING.map((p) => p[0]);
-  const ys = CAMPUS_RING.map((p) => p[1]);
+  const pts = [...CAMPUS_RING, ...VILLAGE_RING];
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
   return [
     [Math.min(...xs), Math.min(...ys)],
     [Math.max(...xs), Math.max(...ys)],
@@ -138,10 +139,12 @@ export default function CampusMap({ issues, onSelect, onBuilding, focusId, focus
         [-180, 85],
         [-180, -85],
       ];
-      m.addSource("outside", { type: "geojson", data: { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [world, CAMPUS_RING] } } });
+      m.addSource("outside", { type: "geojson", data: { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [world, CAMPUS_RING, VILLAGE_RING] } } });
+      m.addSource("usc-areas", { type: "geojson", data: { type: "FeatureCollection", features: [CAMPUS_RING, VILLAGE_RING].map((r) => ({ type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [r] } })) } });
+      m.addLayer({ id: "usc-tint", type: "fill", source: "usc-areas", paint: { "fill-color": "#990000", "fill-opacity": light ? 0.06 : 0.1 } });
       m.addLayer({ id: "outside-dim", type: "fill", source: "outside", paint: { "fill-color": light ? "#2a0a0a" : "#000000", "fill-opacity": light ? 0.3 : 0.55 } });
-      m.addSource("campus", { type: "geojson", data: { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: CAMPUS_RING } } });
-      m.addLayer({ id: "campus-glow", type: "line", source: "campus", paint: { "line-color": "#ff2a36", "line-width": 10, "line-blur": 8, "line-opacity": 0.45 } });
+      m.addSource("campus", { type: "geojson", data: { type: "FeatureCollection", features: [CAMPUS_RING, VILLAGE_RING].map((r) => ({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: r } })) } });
+      m.addLayer({ id: "campus-glow", type: "line", source: "campus", paint: { "line-color": "#990000", "line-width": 10, "line-blur": 8, "line-opacity": 0.5 } });
       m.addLayer({ id: "campus-edge", type: "line", source: "campus", paint: { "line-color": "#FFCC00", "line-width": 1.6 } });
 
       // 3D buildings only when zoomed into campus (cheap at city zoom)

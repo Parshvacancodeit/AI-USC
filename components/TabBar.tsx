@@ -1,38 +1,33 @@
 "use client";
-import { Activity, Camera, HandHeart, Radio, UserRound } from "lucide-react";
+import { Camera, HandHelping, Map, MessageCircle, UserRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { haptic } from "@/lib/haptics";
 
 const TABS = [
-  { href: "/", label: "Live", Icon: Radio },
-  { href: "/feed", label: "Feed", Icon: Activity },
+  { href: "/", label: "Map", Icon: Map, match: (p: string) => p === "/" },
+  { href: "/ask", label: "Ask SC", Icon: MessageCircle, match: (p: string) => p.startsWith("/ask") || p.startsWith("/help") },
   null,
-  { href: "/help", label: "Help SC", Icon: HandHeart },
-  { href: "/me", label: "Me", Icon: UserRound },
+  { href: "/favors", label: "Favors", Icon: HandHelping, match: (p: string) => p.startsWith("/favors") },
+  { href: "/me", label: "Me", Icon: UserRound, match: (p: string) => p.startsWith("/me") },
 ];
 
 export default function TabBar() {
   const path = usePathname();
-  const on = (href: string) => path === href || (href !== "/" && path.startsWith(`${href}/`));
   return (
     <nav className="panel-bar fixed inset-x-0 bottom-0 z-40 mx-auto max-w-[480px] pb-[env(safe-area-inset-bottom)]">
-      <div className="grid h-[64px] grid-cols-5 items-center">
+      <div className="grid h-[60px] grid-cols-5 items-center">
         {TABS.map((t) =>
           t ? (
-            <Link
-              key={t.href}
-              href={t.href}
-              onClick={() => haptic()}
-              className={`flex flex-col items-center gap-1 text-[10px] font-semibold tracking-wide transition ${on(t.href) ? "text-ink" : "text-muted"}`}
-            >
-              <t.Icon size={22} strokeWidth={on(t.href) ? 2.4 : 2} className={on(t.href) && t.href === "/" ? "text-accent" : ""} />
+            <Link key={t.href} href={t.href} onClick={() => haptic()} className={`press flex flex-col items-center gap-0.5 text-[10px] font-semibold ${t.match(path) ? "text-accent" : "text-muted"}`}>
+              <t.Icon size={22} strokeWidth={t.match(path) ? 2.4 : 1.9} />
               {t.label}
+              <span className="tab-dot" style={{ transform: t.match(path) ? "scale(1)" : "scale(0)" }} />
             </Link>
           ) : (
             <Link key="report" href="/report" onClick={() => haptic("medium")} className="flex justify-center" aria-label="Report a problem">
-              <span className="glow-cardinal -mt-7 grid h-[62px] w-[62px] place-items-center rounded-full bg-gradient-to-b from-[#e0202e] to-cardinal ring-[3px] ring-gold/80 transition active:scale-90">
-                <Camera size={26} strokeWidth={2.2} className="text-white" />
+              <span className="press -mt-6 grid h-[58px] w-[58px] place-items-center rounded-full bg-cardinal text-white shadow-[0_8px_24px_rgba(153,0,0,0.35)] ring-[3px] ring-gold">
+                <Camera size={25} strokeWidth={2.2} />
               </span>
             </Link>
           ),

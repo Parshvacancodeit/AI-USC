@@ -1,6 +1,6 @@
 "use client";
 // Help SC thread: the post, AI "Related right now", replies (live), composer at the bottom.
-import { Check, Clock, MapPin, Sparkles } from "lucide-react";
+import { ArrowBigDown, ArrowBigUp, Check, Clock, MapPin, MessageCircle, Navigation, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -9,7 +9,7 @@ import StepHeader from "@/components/StepHeader";
 import { ApiError, myUserId } from "@/lib/api";
 import { timeAgo } from "@/lib/campus";
 import { haptic } from "@/lib/haptics";
-import { fetchRelated, getPost, helpPhotoUrl, KIND, resolvePost, SECTIONS, sectionOf, shortPlace, subscribeHelp, timeLeft, type RelatedItem } from "@/lib/help";
+import { fetchRelated, getPost, helpPhotoUrl, KIND, myVotes, resolvePost, scoreOf, shortPlace, subscribeHelp, timeLeft, votePost, type RelatedItem } from "@/lib/help";
 import { HELP_KARMA, type HelpPost, type HelpReply } from "@/lib/help-types";
 import { handle } from "@/lib/karma";
 
@@ -21,6 +21,8 @@ export default function Thread() {
   const [me, setMe] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [vote, setVote] = useState<1 | -1 | 0>(0);
+  useEffect(() => setVote(myVotes()[id] ?? 0), [id]);
 
   useEffect(() => {
     getPost(id)
@@ -72,7 +74,7 @@ export default function Thread() {
   }
 
   return (
-    <Frame title={SECTIONS[sectionOf(post.kind)].title} composer={live}>
+    <Frame title={post.kind === "ask" ? "Ask SC" : post.kind === "favor" ? "Favors" : "Help SC"} composer={live}>
       {/* The post */}
       <article className="animate-fade-up">
         {post.kind !== "ask" && (
@@ -100,6 +102,42 @@ export default function Thread() {
           )}
         </div>
 
+        {/* Action bar: votes · replies · directions */}
+        <div className="mt-4 flex items-center gap-2 border-y hairline py-2">
+          {scoreOf(post) !== null && (
+            <div className="flex items-center gap-1 rounded-full bg-surface-2 px-1.5 py-1">
+              {([1, -1] as const).map((d) => (
+                <button
+                  key={d}
+                  aria-label={d === 1 ? "Upvote" : "Downvote"}
+                  onClick={() => {
+                    haptic();
+                    const next = (vote === d ? 0 : d) as 1 | -1 | 0;
+                    setPost({ ...post, score: (scoreOf(post) ?? 0) + (next - vote) } as HelpPost);
+                    setVote(next);
+                    votePost(post.id, next).catch(() => {});
+                  }}
+                  className={`${vote === d ? (d === 1 ? "animate-pop text-accent" : "animate-pop text-[#0a84ff]") : "text-muted"} ${d === -1 ? "order-3" : ""}`}
+                >
+                  {d === 1 ? <ArrowBigUp size={22} fill={vote === 1 ? "currentColor" : "none"} strokeWidth={1.6} /> : <ArrowBigDown size={22} fill={vote === -1 ? "currentColor" : "none"} strokeWidth={1.6} />}
+                </button>
+              ))}
+              <span className="order-2 min-w-5 text-center text-[13px] font-bold tabular-nums">{scoreOf(post)}</span>
+            </div>
+          )}
+          <span className="flex items-center gap-1 px-2 text-[13px] text-muted">
+            <MessageCircle size={15} /> {replies.length}
+          </span>
+          <a
+            href={`https://www.google.com/maps/dir/?api=1&destination=${post.lat},${post.lng}&travelmode=walking`}
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => haptic()}
+            className="press ml-auto flex h-9 items-center gap-1.5 rounded-full bg-cardinal px-3.5 text-[13px] font-semibold text-white"
+          >
+            <Navigation size={14} /> Directions
+          </a>
+        </div>
         {mine && resolvable && (
           <button
             disabled={busy}
@@ -114,7 +152,7 @@ export default function Thread() {
 
       {/* AI: related right now */}
       {related.length > 0 && (
-        <section className="rounded-2xl bg-surface p-4 animate-fade-up">
+        <section className="border-l-2 border-gold pl-3 animate-fade-up">
           <p className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-accent">
             <Sparkles size={14} /> Related right now
           </p>
@@ -135,12 +173,12 @@ export default function Thread() {
       <section>
         <h2 className="mb-2 px-1 text-[13px] font-semibold text-muted">{replies.length ? `${replies.length} repl${replies.length === 1 ? "y" : "ies"}` : "No replies yet"}</h2>
         {replies.length > 0 && (
-          <div className="divide-y divide-line overflow-hidden rounded-2xl bg-surface">
+          <div className="divide-y divide-line border-y hairline">
             {replies.map((r) => {
               const credited = post.resolved_reply_id === r.id;
               const rp = helpPhotoUrl(r.photo_path);
               return (
-                <div key={r.id} className={`px-4 py-3 ${credited ? "bg-resolved/[0.08]" : ""}`}>
+                <div key={r.id} className={`rise py-3 ${credited ? "-mx-4 bg-resolved/[0.08] px-4" : ""}`}>
                   <div className="flex items-center gap-2 text-[13px] text-muted">
                     <span className="font-medium text-ink/80">{me === r.author_id ? "You" : handle(r.author_id)}</span>
                     <span>· {timeAgo(r.created_at)}</span>

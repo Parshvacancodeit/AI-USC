@@ -208,7 +208,9 @@ export async function myReporterId(): Promise<string> {
 
 export async function getIssue(id: string): Promise<Issue | null> {
   if (MOCK) return readStore().find((i) => i.id === id) ?? null;
+  await loadCatalog().catch(() => {});
   const { data } = await supa().from("issues").select("*").eq("id", id).maybeSingle();
+  if (data) await ensureLocations([(data as Issue).location_id]).catch(() => {});
   return (data as Issue) ?? null;
 }
 
