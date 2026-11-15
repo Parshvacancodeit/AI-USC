@@ -164,7 +164,16 @@ export async function analyzePhoto(a: {
 Location: ${a.locationName}, floor ${a.floor || "unknown"}. Student note: ${a.note || "none"}.
 
 Decide whether the photo shows a campus facilities problem. If it does not
-(e.g. a selfie, food, a random object, or everything looks normal), set is_issue to false.
+(e.g. a selfie, food, a random object), set is_issue to false.
+
+ASSUME IT IS BROKEN: students only open Ripple to report something that is not working. If the photo's
+main subject is a piece of shared equipment or a fixture (an elevator or its doors/buttons, a printer,
+a water fountain or bottle filler, a vending or laundry machine, a door or card reader, a light, an outlet,
+a restroom fixture, an AC unit, etc.), treat it as an issue even if it looks normal and there is no sign:
+set is_issue to true and assume it is out of order. Title it like "Elevator out of order" or "Printer not working",
+and in the description say it was reported as not working. Use priority high for elevators (they block step-free
+access) and medium for most other equipment, unless the photo or note shows something more serious.
+Only set is_issue to false for photos with no facility or equipment as the main subject.
 
 EMERGENCY: if the photo or the note shows a fire or smoke, an injury, a medical emergency, anyone in
 danger, or a crime, set emergency to true and is_issue to false. Ripple does not handle these; the
