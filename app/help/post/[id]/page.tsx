@@ -9,7 +9,7 @@ import StepHeader from "@/components/StepHeader";
 import { ApiError, myUserId } from "@/lib/api";
 import { timeAgo } from "@/lib/campus";
 import { haptic } from "@/lib/haptics";
-import { fetchRelated, getPost, helpPhotoUrl, KIND, myVotes, resolvePost, scoreOf, shortPlace, subscribeHelp, timeLeft, votePost, type RelatedItem } from "@/lib/help";
+import { fetchRelated, getPost, helpPhotoUrl, isCampusWide, KIND, myVotes, resolvePost, scoreOf, shortPlace, subscribeHelp, timeLeft, votePost, type RelatedItem } from "@/lib/help";
 import { HELP_KARMA, type HelpPost, type HelpReply } from "@/lib/help-types";
 import { handle } from "@/lib/karma";
 
@@ -89,9 +89,13 @@ export default function Thread() {
           <img src={photo} alt="" className="mt-3 max-h-80 w-full rounded-2xl object-cover" />
         )}
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-muted">
-          <a href={`https://maps.google.com/?q=${post.lat},${post.lng}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-accent">
-            <MapPin size={13} /> {shortPlace(post.location_name)}
-          </a>
+          {isCampusWide(post) ? (
+            <span className="flex items-center gap-1 font-semibold text-accent">All of USC</span>
+          ) : (
+            <a href={`https://maps.google.com/?q=${post.lat},${post.lng}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-accent">
+              <MapPin size={13} /> {shortPlace(post.location_name)}
+            </a>
+          )}
           <span>
             {mine ? "You" : handle(post.author_id)} · {timeAgo(post.created_at)}
           </span>
@@ -128,7 +132,7 @@ export default function Thread() {
           <span className="flex items-center gap-1 px-2 text-[13px] text-muted">
             <MessageCircle size={15} /> {replies.length}
           </span>
-          <a
+          {!isCampusWide(post) && <a
             href={`https://www.google.com/maps/dir/?api=1&destination=${post.lat},${post.lng}&travelmode=walking`}
             target="_blank"
             rel="noreferrer"
@@ -136,7 +140,7 @@ export default function Thread() {
             className="press ml-auto flex h-9 items-center gap-1.5 rounded-full bg-cardinal px-3.5 text-[13px] font-semibold text-white"
           >
             <Navigation size={14} /> Directions
-          </a>
+          </a>}
         </div>
         {mine && resolvable && (
           <button

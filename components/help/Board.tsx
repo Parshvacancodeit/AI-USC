@@ -1,6 +1,6 @@
 "use client";
 // Ask SC / Favors board: Reddit-style list (votes, replies, Hot/New/Near), search, building filter.
-import { ArrowBigDown, ArrowBigUp, CheckCircle2, Clock, MapPin, MessageCircle, Plus, Search, X } from "lucide-react";
+import { ArrowBigDown, ArrowBigUp, CheckCircle2, Clock, Globe2, MapPin, MessageCircle, Plus, Search, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -9,7 +9,7 @@ import NewPost from "@/components/help/NewPost";
 import TabBar from "@/components/TabBar";
 import { timeAgo } from "@/lib/campus";
 import { haptic } from "@/lib/haptics";
-import { currentSpot, distanceM, fmtDistance, helpPhotoUrl, hot, listPosts, myVotes, scoreOf, shortPlace, subscribeHelp, timeLeft, votePost } from "@/lib/help";
+import { currentSpot, distanceM, fmtDistance, helpPhotoUrl, hot, isCampusWide, listPosts, myVotes, scoreOf, shortPlace, subscribeHelp, timeLeft, votePost } from "@/lib/help";
 import type { HelpPost } from "@/lib/help-types";
 import { handle } from "@/lib/karma";
 
@@ -154,10 +154,10 @@ export default function Board({ kind }: { kind: "ask" | "favor" }) {
             )}
             <Link href={`/help/post/${p.id}`} onClick={() => haptic()} className="min-w-0 flex-1">
               <p className="flex items-center gap-1 truncate text-[12px] text-muted">
-                <MapPin size={11} className="shrink-0 text-accent" />
-                <span className="truncate font-semibold text-ink/80">{shortPlace(p.location_name)}</span>
+                {isCampusWide(p) ? <Globe2 size={11} className="shrink-0 text-accent" /> : <MapPin size={11} className="shrink-0 text-accent" />}
+                <span className="truncate font-semibold text-ink/80">{isCampusWide(p) ? "All of USC" : shortPlace(p.location_name)}</span>
                 <span>· {timeAgo(p.created_at)}</span>
-                {here && <span>· {fmtDistance(distanceM(here, p))}</span>}
+                {here && !isCampusWide(p) && <span>· {fmtDistance(distanceM(here, p))}</span>}
               </p>
               <div className="mt-1 flex gap-3">
                 <div className="min-w-0 flex-1">
@@ -204,6 +204,7 @@ export default function Board({ kind }: { kind: "ask" | "favor" }) {
       {composing && (
         <NewPost
           kind={kind}
+          existing={posts ?? []}
           onClose={() => setComposing(false)}
           onPosted={(id) => {
             setComposing(false);

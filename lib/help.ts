@@ -341,3 +341,29 @@ export function hot(p: HelpPost) {
   const h = (Date.now() - +new Date(p.created_at)) / 3_600_000;
   return s / Math.pow(h + 2, 1.4);
 }
+
+// ---------- Campus-wide posts ("All of USC") ----------
+/** Audience for a post that isn't about one building. Stored as a normal location at the center of campus. */
+export const ALL_USC = { id: "usc-all", name: "All of USC", lat: 34.0205, lng: -118.2856 };
+export const isCampusWide = (p: { location_id: string }) => p.location_id === ALL_USC.id;
+
+/** Live posts that share words with a draft ("Already asked?"). Cheap local match, no AI. */
+const STOP = new Set("the a an is are was it to of in on at for and or my me i you any anyone is there how what where when who can does do with near now right this that".split(" "));
+export function similarPosts(draft: string, posts: HelpPost[], kind: HelpKind, n = 3): HelpPost[] {
+  const words = (s: string) => new Set(s.toLowerCase().match(/[a-z0-9']{3,}/g)?.filter((w) => !STOP.has(w)) ?? []);
+  const d = words(draft);
+  if (d.size === 0) return [];
+  const now = Date.now();
+  return posts
+    .filter((p) => p.kind === kind && p.status !== "closed" && +new Date(p.expires_at) > now)
+    .map((p) => {
+      const w = words(`${p.title} ${p.body ?? ""} ${p.location_name}`);
+      let hit = 0;
+      d.forEach((x) => w.has(x) && hit++);
+      return { p, s: hit / Math.max(2, d.size) };
+    })
+    .filter((x) => x.s >= 0.34)
+    .sort((a, b) => b.s - a.s)
+    .slice(0, n)
+    .map((x) => x.p);
+}
