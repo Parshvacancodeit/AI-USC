@@ -7,7 +7,8 @@ import { CategoryIcon } from "@/components/Icon";
 const MapPicker = dynamic(() => import("@/components/MapPicker"), { ssr: false, loading: () => <div className="shimmer h-[46dvh] rounded-3xl" /> });
 import { haptic } from "@/lib/haptics";
 import { readPhotoGps } from "@/lib/exif-gps";
-import { bestFix, locate, type Spot } from "@/lib/locate";
+import { bestFix, locate, nearestPlaces, spotFor, type Spot } from "@/lib/locate";
+import { USC_BUILDINGS } from "@/lib/usc-buildings";
 import { routeFor } from "@/lib/routing";
 import dynamic from "next/dynamic";
 import StepHeader from "@/components/StepHeader";
@@ -40,7 +41,9 @@ export default function ReportPage() {
   const [faces, setFaces] = useState(0);
   const [spot, setSpot] = useState<Spot | null>(null);
   const [picked, setPicked] = useState<Spot | null>(null);
-  const [gpsPos, setGpsPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [gpsPos, setGpsPos] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
+  const [center, setCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const [q, setQ] = useState("");
   const [newType, setNewType] = useState<{ id: string; label: string } | null>(null);
   const [gpsNote, setGpsNote] = useState<string | null>(null);
   const [autoLoc, setAutoLoc] = useState(false);
@@ -69,8 +72,16 @@ export default function ReportPage() {
     const fromPhoto = await readPhotoGps(file);
     const pos: { lat: number; lng: number; accuracy?: number } | null =
       fromPhoto ?? (await Promise.race([fix.current ?? Promise.resolve(null), new Promise<null>((r) => setTimeout(() => r(null), 7000))]));
-    if (!pos) return null;
+    if (!pos) {
+      setGpsNote("Location is off. Search or tap your building (iPhone: Settings › Privacy › Location Services › Safari Websites).");
+      return null;
+    }
     setGpsPos(pos);
+    // Indoors, phones often fall back to Wi-Fi positioning that can be hundreds of meters off: don't guess.
+    if (!fromPhoto && pos.accuracy && pos.accuracy > 35) {
+      setGpsNote(`Weak GPS indoors (±${Math.round(pos.accuracy)} m). Tap your building.`);
+      return null;
+    }
     const s = locate(pos.lat, pos.lng);
     if (s.kind === "off_campus") {
       setGpsNote("You seem to be off campus. Drop the pin on the building.");
@@ -262,7 +273,34 @@ export default function ReportPage() {
                 <MapPin size={15} className="text-accent" /> {gpsNote}
               </p>
             )}
-            <MapPicker start={spot?.location ?? gpsPos} onChange={setPicked} />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search building, e.g. Ginsburg"
+              className="h-11 w-full rounded-xl bg-surface px-3 text-[15px] outline-none focus:ring-2 focus:ring-cardinal"
+            />
+            {(q.trim() || gpsPos) && (
+              <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
+                {(q.trim()
+                  ? USC_BUILDINGS.filter((b) => b.name.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 10).map(spotFor)
+                  : nearestPlaces(gpsPos!.lat, gpsPos!.lng, 8, Math.max(250, (gpsPos!.accuracy ?? 0) + 150))
+                ).map((p) => (
+                  <button
+                    key={p.location.id}
+                    onClick={() => {
+                      haptic();
+                      setPicked(spotFor(p.building!));
+                      setCenter({ lat: p.location.lat, lng: p.location.lng });
+                    }}
+                    className={`h-10 shrink-0 rounded-full px-4 text-[13px] font-semibold transition ${picked?.location.id === p.location.id ? "bg-cardinal text-white" : "bg-surface"}`}
+                  >
+                    {p.building?.name ?? p.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            <MapPicker start={spot?.location ?? gpsPos} center={center} onChange={setPicked} />
+            {!picked && <p className="text-center text-xs text-muted">Drag the map or tap a building to place the pin.</p>}
             <p className="text-center text-xs text-muted">Works anywhere on campus: inside a building, or outdoors near one.</p>
             <Actions
               primary={{

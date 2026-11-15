@@ -356,7 +356,7 @@ export function mockReset() {
 }
 
 export const describeLocation = (i: Pick<Issue, "location_id" | "floor">) =>
-  `${locationName(i.location_id)}${i.floor ? ` · Floor ${i.floor}` : ""}`;
+  `${locationName(i.location_id)}${!i.floor ? "" : i.floor === "Outside" ? " · Outside" : i.floor === "B" ? " · Basement" : ` · Floor ${i.floor}`}`;
 
 // ---------- Session helpers (shared with Help SC, lib/help.ts) ----------
 /** Browser Supabase client (anon key): public reads + Realtime. */

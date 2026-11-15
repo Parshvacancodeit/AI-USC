@@ -165,7 +165,7 @@ export function merge(issues: Issue[], ov: Record<string, Overlay>, live?: Activ
         ...(live ? live.events.filter((e) => e.issue_id === i.id).map((e) => ({ at: e.created_at, by: e.actor_name, type: e.type, text: e.text })) : (o.events ?? [])),
       ],
       office: o.assigned_team ?? i.assigned_team ?? routeFor(category, i.location_id, i.floor).office,
-      locationLabel: `${loc?.name ?? "USC campus"}${i.floor ? ` · Floor ${i.floor}` : ""}`,
+      locationLabel: `${loc?.name ?? "USC campus"}${!i.floor ? "" : i.floor === "Outside" ? " · Outside" : i.floor === "B" ? " · Basement" : ` · Floor ${i.floor}`}`,
       lat: loc?.lat ?? null,
       lng: loc?.lng ?? null,
     };

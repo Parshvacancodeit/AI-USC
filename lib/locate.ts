@@ -64,6 +64,20 @@ export function locate(lat: number, lng: number): Spot {
   return { kind: "near", label: `Near ${near.name}`, outside: true, distance: Math.round(d), building: near, location: toLocation(near) };
 }
 
+/** Named places closest to a point (by distance to their outline), for "pick your building" chips. */
+export function nearestPlaces(lat: number, lng: number, n = 6, withinM = 600): Spot[] {
+  return USC_BUILDINGS.map((b) => ({ b, d: inside(lng, lat, b.ring) ? 0 : edgeDistance(lng, lat, b.ring) }))
+    .filter((x) => x.d <= withinM)
+    .sort((a, b) => a.d - b.d)
+    .slice(0, n)
+    .map(({ b, d }) => ({ kind: d === 0 ? "inside" : "near", label: b.name, outside: false, distance: Math.round(d), building: b, location: toLocation(b) }) as Spot);
+}
+
+/** Spot for a building the student picked by hand (they're inside it). */
+export function spotFor(b: Building): Spot {
+  return { kind: "inside", label: `At ${b.name}`, outside: false, distance: 0, building: b, location: toLocation(b) };
+}
+
 /** Best GPS fix within `ms`: listens to updates and keeps the most accurate one; stops early at <= `good` meters. */
 export function bestFix(ms = 5000, good = 12): Promise<{ lat: number; lng: number; accuracy: number } | null> {
   return new Promise((resolve) => {

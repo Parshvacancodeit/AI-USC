@@ -11,12 +11,15 @@ import { useTheme } from "@/lib/theme";
 
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
-export default function MapPicker({ start, onChange }: { start?: { lat: number; lng: number } | null; onChange: (s: Spot) => void }) {
+export default function MapPicker({ start, center, onChange }: { start?: { lat: number; lng: number } | null; center?: { lat: number; lng: number } | null; onChange: (s: Spot) => void }) {
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const chipMove = useRef(false);
   const box = useRef<HTMLDivElement>(null);
   const cb = useRef(onChange);
   cb.current = onChange;
   const theme = useTheme();
-  const [label, setLabel] = useState("Move the map to place the pin");
+  const [label, setLabel] = useState(start ? "Finding building…" : "Drag the map to your building");
+  const touched = useRef(!!start); // no GPS: nothing is picked until the student moves the map
   const [moving, setMoving] = useState(false);
 
   useEffect(() => {
@@ -36,6 +39,7 @@ export default function MapPicker({ start, onChange }: { start?: { lat: number; 
       pitch: 0,
       attributionControl: { compact: true },
     });
+    mapRef.current = m;
     let last = "";
     const update = () => {
       const c = m.getCenter();
@@ -47,6 +51,14 @@ export default function MapPicker({ start, onChange }: { start?: { lat: number; 
       );
       if (s.label !== last && last) haptic();
       last = s.label;
+      if (!touched.current) {
+        setLabel("Drag the map to your building");
+        return;
+      }
+      if (chipMove.current) {
+        chipMove.current = false; // keep the building the student tapped
+        return;
+      }
       cb.current(s);
     };
     m.on("load", () => {
@@ -57,11 +69,22 @@ export default function MapPicker({ start, onChange }: { start?: { lat: number; 
       m.addLayer({ id: "hit-line", type: "line", source: "hit", paint: { "line-color": "#ff2a36", "line-width": 2.5 } });
       update();
     });
-    m.on("movestart", () => setMoving(true));
+    m.on("movestart", (ev) => {
+      if ((ev as { originalEvent?: Event }).originalEvent) touched.current = true;
+      setMoving(true);
+    });
     m.on("moveend", update);
     return () => m.remove();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- start only seeds the first view
   }, [theme]);
+
+  // A building chip was tapped: glide the pin onto it
+  useEffect(() => {
+    if (!center || !mapRef.current) return;
+    chipMove.current = true;
+    touched.current = true;
+    mapRef.current.easeTo({ center: [center.lng, center.lat], zoom: 17.5, duration: 600 });
+  }, [center]);
 
   return (
     <div className="relative h-[46dvh] overflow-hidden rounded-3xl">

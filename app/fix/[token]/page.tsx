@@ -124,7 +124,7 @@ export default function FixPage() {
               <MapPin size={15} className="shrink-0 text-accent" />
               <span className="min-w-0 flex-1 truncate">
                 {i.location}
-                {i.floor ? ` · Floor ${i.floor}` : ""}
+                {!i.floor ? "" : i.floor === "Outside" ? " · Outside" : i.floor === "B" ? " · Basement" : ` · Floor ${i.floor}`}
               </span>
               {i.map && (
                 <a href={i.map} target="_blank" rel="noreferrer" className="flex shrink-0 items-center gap-0.5 font-semibold text-accent">
