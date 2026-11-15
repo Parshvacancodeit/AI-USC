@@ -27,6 +27,12 @@ export default function MapPicker({ start, onChange }: { start?: { lat: number; 
       style: `https://tiles.openfreemap.org/styles/${light ? "liberty" : "dark"}`,
       center: start ? [start.lng, start.lat] : USC_CENTER,
       zoom: 17.3,
+      minZoom: 14,
+      maxBounds: [
+        [USC_CENTER[0] - 0.07, USC_CENTER[1] - 0.058],
+        [USC_CENTER[0] + 0.07, USC_CENTER[1] + 0.058],
+      ],
+      fadeDuration: 0,
       pitch: 0,
       attributionControl: { compact: true },
     });

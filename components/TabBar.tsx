@@ -16,7 +16,7 @@ export default function TabBar() {
   const path = usePathname();
   const on = (href: string) => path === href || (href !== "/" && path.startsWith(`${href}/`));
   return (
-    <nav className="glass-strong fixed inset-x-0 bottom-0 z-40 mx-auto max-w-[480px] pb-[env(safe-area-inset-bottom)]">
+    <nav className="panel-bar fixed inset-x-0 bottom-0 z-40 mx-auto max-w-[480px] pb-[env(safe-area-inset-bottom)]">
       <div className="grid h-[64px] grid-cols-5 items-center">
         {TABS.map((t) =>
           t ? (

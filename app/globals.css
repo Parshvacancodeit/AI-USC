@@ -31,6 +31,7 @@
   --t-assigned: #ffb020;
   --t-resolved: #30d158;
   --t-glass: rgba(22, 22, 27, 0.72);
+  --t-panel: rgba(24, 24, 30, 0.96);
   --t-glass-strong: rgba(14, 14, 18, 0.86);
   --t-hair: rgba(255, 255, 255, 0.08);
   --t-shim-a: #16161b;
@@ -52,6 +53,7 @@
   --t-assigned: #e08e00;
   --t-resolved: #1fa65a;
   --t-glass: rgba(255, 255, 255, 0.78);
+  --t-panel: rgba(255, 255, 255, 0.97);
   --t-glass-strong: rgba(250, 250, 252, 0.9);
   --t-hair: rgba(0, 0, 0, 0.08);
   --t-shim-a: #e9e9ee;
@@ -85,6 +87,10 @@ body {
   -webkit-backdrop-filter: saturate(180%) blur(30px);
   border-top: 1px solid var(--t-hair);
 }
+/* Solid panels for anything floating over the live map: no backdrop blur = no per-frame repaint */
+.panel { background: var(--t-panel); border: 1px solid var(--t-hair); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12); }
+.panel-bar { background: var(--t-panel); border-top: 1px solid var(--t-hair); }
+
 .hairline { border-color: var(--t-hair); }
 .scrim-top { background: linear-gradient(to bottom, var(--t-scrim), transparent); }
 

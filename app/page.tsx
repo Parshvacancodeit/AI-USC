@@ -102,7 +102,7 @@ export default function Live() {
 
       {/* Header */}
       <header className="pointer-events-none absolute inset-x-0 top-0 z-10 px-3 pt-[max(10px,env(safe-area-inset-top))]">
-        <div className="glass pointer-events-auto flex items-center gap-3 rounded-[22px] px-3 py-2.5 shadow-2xl animate-fade-up">
+        <div className="panel pointer-events-auto flex items-center gap-3 rounded-[22px] px-3 py-2.5 shadow-2xl animate-fade-up">
           <RippleLogo size={36} />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
@@ -151,7 +151,7 @@ export default function Live() {
           {!loaded &&
             [0, 1].map((n) => <div key={n} className="shimmer h-[118px] w-[84%] shrink-0 rounded-[24px]" />)}
           {loaded && visible.length === 0 && (
-            <div className="glass flex h-[118px] w-full shrink-0 items-center gap-4 rounded-[24px] px-5 animate-fade-up">
+            <div className="panel flex h-[118px] w-full shrink-0 items-center gap-4 rounded-[24px] px-5 animate-fade-up">
               <div className="grid h-12 w-12 place-items-center rounded-full bg-resolved/15 text-resolved">
                 <CheckCircle2 size={26} />
               </div>
@@ -167,7 +167,7 @@ export default function Live() {
               data-id={i.id}
               href={`/issue/${i.id}`}
               onClick={() => haptic()}
-              className={`glass flex h-[118px] w-[84%] shrink-0 snap-start gap-3 rounded-[24px] p-3 transition animate-fade-up ${focus === i.id ? "ring-1 ring-white/30" : ""}`}
+              className={`panel flex h-[118px] w-[84%] shrink-0 snap-start gap-3 rounded-[24px] p-3 transition animate-fade-up ${focus === i.id ? "ring-1 ring-white/30" : ""}`}
               style={{ animationDelay: `${Math.min(n, 4) * 60 + 150}ms` }}
             >
               <Thumb issue={i} size={94} />
@@ -244,7 +244,7 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
         haptic();
         onClick();
       }}
-      className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition ${active ? "bg-ink text-canvas" : "glass text-ink"}`}
+      className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition ${active ? "bg-ink text-canvas" : "panel text-ink"}`}
     >
       {children}
     </button>
