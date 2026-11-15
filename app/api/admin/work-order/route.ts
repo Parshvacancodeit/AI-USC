@@ -2,6 +2,7 @@
 // Drafts a work order for the office that owns the issue's category. Claude writes it; if Claude
 // is unavailable we return the same fields from a plain template with ai: false. Never 500s because of AI.
 import { NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/admin-server";
 import { categoryDef, templateWorkOrder, writeWorkOrder, type WorkOrder, type WorkOrderInput } from "@/lib/ai";
 import { loadCategories } from "@/lib/ai-storage";
 import { departmentFor } from "@/lib/departments";
@@ -13,10 +14,8 @@ export const maxDuration = 30;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function POST(req: Request) {
-  const pass = process.env.ADMIN_PASSCODE;
-  if (!pass || req.headers.get("x-admin-passcode") !== pass) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const admin = requireAdmin(req); // same staff check as every other /api/admin route
+  if (admin instanceof NextResponse) return admin;
   const body = (await req.json().catch(() => null)) as { issueId?: string; office?: string } | null;
   if (!body?.issueId || !UUID.test(body.issueId)) {
     return NextResponse.json({ error: "issueId (uuid) is required" }, { status: 400 });
