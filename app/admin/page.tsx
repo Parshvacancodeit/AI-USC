@@ -55,6 +55,7 @@ import {
 import { setTheme, useTheme } from "@/lib/theme";
 import OfficeLoop from "@/components/admin/OfficeLoop";
 import RiskPanel from "@/components/admin/RiskPanel";
+import InsightCard from "@/components/admin/InsightCard";
 import WhyOffice from "@/components/admin/WhyOffice";
 import { triageScore } from "@/lib/triage-score";
 import { isOverdue } from "@/lib/sla";
@@ -565,6 +566,7 @@ function Drawer({ issue: i, all, onClose }: { issue: AdminIssue; all: AdminIssue
             </label>
           </div>
           <RiskPanel risk={i.ai_risk ?? null} confidence={i.ai_confidence} />
+          {!MOCK && i.status !== "rejected" && <InsightCard key={i.id} issueId={i.id} />}
           {!MOCK && (
             <OfficeLoop
               issue={i}

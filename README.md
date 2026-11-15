@@ -298,6 +298,8 @@ counts are invented. `/admin` shows "Includes demo history for illustration." wh
   Overdue → red badge, Queue "Overdue" tab, Overview tile → **Draft reminder (AI)** (template fallback) → edit →
   **Send reminder** (`send-work-order` with `kind: "reminder"`: subject "[Dept] Reminder: …", fresh office link,
   event `reminder`; status and deadline clock unchanged). Acknowledging via any link clears Overdue.
+- **Recurring issue** (`/api/admin/insight`, AI with rule fallback): ≥ 3 similar issues at the same place + problem
+  type in 45 days → Claude names a likely cause (only from titles) and a recommendation; cached in `issues.ai_insight` 1 h.
 - **Why this office?**: client-side, from `routeFor().why`, building type (`placeKind`), problem type, AI category
   confidence; shows "Re-routed by <name>" when a supervisor changed the office. Rules, not AI.
 
@@ -388,6 +390,7 @@ POST /api/admin/send-work-order { issueId, subject, body, office? }   // P3: sup
   // creates a fix_tokens link (7 days), emails DEMO_OFFICE_INBOX with subject "[Department] …", status='assigned', issue_events.
   // Email off/failed → sent=false, still returns the link (admin shows "Email (demo)").
 POST /api/admin/fix-review  { issueId, note? }          // P3: "Send back" a submitted fix (clears after photo + verdict)
+POST /api/admin/insight { issueId }                     // P3: recurring-problem insight → { recurring, count, resolved, median_days, likely_cause, recommendation, confidence }
 POST /api/admin/draft-reminder { issueId }              // P3: AI follow-up for an office that hasn't acknowledged → { subject, body, ai }
 // send-work-order also takes kind: "reminder" (see Office loop)
 ```
@@ -456,6 +459,9 @@ If no category fits well, choose "other" (or the closest one) AND propose a new 
 new_category_id (snake_case) and new_category_label. If one fits, leave both empty.
 EMERGENCY: fire/smoke, injury, medical emergency, anyone in danger, or a crime → emergency = true, is_issue = false.
 About a person (behavior/appearance) rather than a facility → is_issue = false.
+Recurrence (analyzeRecurrence, text only): given place, problem type, count/resolved/median days and the last 5 titles,
+decide recurring vs coincidence; likely_cause ≤ 1 sentence starting "Likely", based only on titles; recommendation ≤ 1
+sentence. Fallback: recurring = count ≥ 3 with a generic cause/recommendation.
 Reminder (writeReminder, text only): polite, firm, ≤ 80 words, plain text; what is waiting, since when, how many students,
 accessibility impact if relevant; asks them to acknowledge via the link; never names students. Fallback: templateReminder.
 Risk (for /admin): safety_risk = could injure someone or blocks a safe exit; notify_dps = ONLY immediate danger
