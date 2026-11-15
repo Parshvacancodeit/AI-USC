@@ -293,6 +293,11 @@ counts are invented. `/admin` shows "Includes demo history for illustration." wh
 - **Smart queue** (`lib/triage-score.ts`, rules, default sort): priority (urgent 40 · high 25 · medium 12 · low 5)
   + safety risk 20 + act today 10 + accessibility 15 + 3/student (max 10) + 4 per similar issue at the same place in
   45 days (max 24) + 0.5/hour open (max 20) + overdue 15. Rows show the score and top 3 reasons.
+- **Response deadlines + AI reminders** (`lib/sla.ts` rules + `writeReminder` AI): office must acknowledge within
+  urgent 4 h · high 24 h · medium 72 h · low 7 days of the work order (demo: `NEXT_PUBLIC_SLA_DEMO_MINUTES`).
+  Overdue → red badge, Queue "Overdue" tab, Overview tile → **Draft reminder (AI)** (template fallback) → edit →
+  **Send reminder** (`send-work-order` with `kind: "reminder"`: subject "[Dept] Reminder: …", fresh office link,
+  event `reminder`; status and deadline clock unchanged). Acknowledging via any link clears Overdue.
 - **Why this office?**: client-side, from `routeFor().why`, building type (`placeKind`), problem type, AI category
   confidence; shows "Re-routed by <name>" when a supervisor changed the office. Rules, not AI.
 
@@ -383,6 +388,8 @@ POST /api/admin/send-work-order { issueId, subject, body, office? }   // P3: sup
   // creates a fix_tokens link (7 days), emails DEMO_OFFICE_INBOX with subject "[Department] …", status='assigned', issue_events.
   // Email off/failed → sent=false, still returns the link (admin shows "Email (demo)").
 POST /api/admin/fix-review  { issueId, note? }          // P3: "Send back" a submitted fix (clears after photo + verdict)
+POST /api/admin/draft-reminder { issueId }              // P3: AI follow-up for an office that hasn't acknowledged → { subject, body, ai }
+// send-work-order also takes kind: "reminder" (see Office loop)
 ```
 Resolve fires the Realtime update that shows "Fixed" on phones.
 
@@ -449,6 +456,8 @@ If no category fits well, choose "other" (or the closest one) AND propose a new 
 new_category_id (snake_case) and new_category_label. If one fits, leave both empty.
 EMERGENCY: fire/smoke, injury, medical emergency, anyone in danger, or a crime → emergency = true, is_issue = false.
 About a person (behavior/appearance) rather than a facility → is_issue = false.
+Reminder (writeReminder, text only): polite, firm, ≤ 80 words, plain text; what is waiting, since when, how many students,
+accessibility impact if relevant; asks them to acknowledge via the link; never names students. Fallback: templateReminder.
 Risk (for /admin): safety_risk = could injure someone or blocks a safe exit; notify_dps = ONLY immediate danger
 (fire/smoke, flooding near electrical, exposed live wiring, someone hurt or at risk); act_today = urgent/high or step-free
 access blocked; reason ≤ 1 sentence, never describes people; confidence 0–1.

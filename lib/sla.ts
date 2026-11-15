@@ -35,7 +35,7 @@ export function isOverdue(i: SlaIssue, now = Date.now()): boolean {
   return !!d && now > +d && !isAcknowledged(i);
 }
 
-export const reminderCount = (i: SlaIssue) => i.events.filter((e) => e.type === "reminder").length;
+export const reminderCount = (i: SlaIssue) => i.events.filter((e) => e.type === "reminder" || (e.type === "status" && e.text.startsWith("Reminder:"))).length;
 
 const fmt = (h: number) => (h < 1 ? `${Math.max(1, Math.round(h * 60))} min` : h < 48 ? `${Math.round(h)} h` : `${Math.round(h / 24)} days`);
 

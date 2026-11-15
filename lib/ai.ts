@@ -539,3 +539,68 @@ Return an empty list if nothing qualifies. "why": 2-5 words, e.g. "Open seats ne
   const ids = new Set(a.candidates.map((c) => c.id));
   return (o.picks ?? []).filter((p) => ids.has(p.id)).slice(0, 2).map((p) => ({ id: p.id, why: plain(str(p.why, 60), 6) }));
 }
+
+// ---------- Prompt 7: Reminder to a slow office (text only) ----------
+export type ReminderInput = {
+  title: string;
+  location: string;
+  floor: string | null;
+  office: string;
+  priority: Priority;
+  reporterCount: number;
+  hoursWaiting: number;
+  deadlineHours: number;
+  accessibility: boolean;
+  previousReminders: number;
+};
+export type Reminder = { subject: string; body: string };
+
+const REMINDER_SCHEMA = {
+  type: "object",
+  properties: { subject: { type: "string" }, body: { type: "string" } },
+  required: ["subject", "body"],
+  additionalProperties: false,
+};
+
+const hrs = (h: number) => (h < 1 ? `${Math.max(1, Math.round(h * 60))} minutes` : h < 48 ? `${Math.round(h)} hours` : `${Math.round(h / 24)} days`);
+const placeOf = (r: ReminderInput) => `${r.location}${r.floor ? `, floor ${r.floor}` : ""}`;
+
+/** No-AI fallback with the same fields. */
+export function templateReminder(r: ReminderInput): Reminder {
+  const nth = r.previousReminders > 0 ? ` (reminder ${r.previousReminders + 1})` : "";
+  return {
+    subject: `${r.title} — ${placeOf(r)}${nth}`.slice(0, 120),
+    body: plain(
+      `Hello ${r.office},\n\n` +
+        `This work order has been waiting ${hrs(r.hoursWaiting)} without an acknowledgement (target: ${hrs(r.deadlineHours)} for ${r.priority} priority). ` +
+        `${students(r.reporterCount)} reported it at ${placeOf(r)}.` +
+        (r.accessibility ? " It affects step-free access for students who use wheelchairs or can't take stairs." : "") +
+        `\n\nPlease acknowledge it with the link below so students know it's being handled. Thank you.`,
+      80,
+      true,
+    ),
+  };
+}
+
+export async function writeReminder(r: ReminderInput): Promise<Reminder> {
+  const prompt = `Write a short follow-up email to the office "${r.office}" about a campus work order they have not acknowledged.
+
+Facts (use only these):
+- Problem: ${r.title}
+- Location: ${placeOf(r)}
+- Priority: ${r.priority}
+- Reported by ${students(r.reporterCount)}
+- Waiting ${hrs(r.hoursWaiting)} since the work order was sent; target response time is ${hrs(r.deadlineHours)}
+${r.accessibility ? "- It blocks step-free access (accessibility impact)\n" : ""}- Previous reminders sent: ${r.previousReminders}
+
+Rules:
+- Polite and firm. State what is waiting, since when, and how many students are affected.
+${r.accessibility ? "- Mention the accessibility impact in one short clause.\n" : ""}- Ask them to acknowledge using the link in this email (the link is added automatically; don't write a URL).
+- Never name or describe students. Plain text, no markdown, no signature placeholders.
+- body: at most 80 words, short paragraphs. subject: at most 10 words, no "Reminder:" prefix (added automatically).`;
+  const o = await callJson<Reminder>([txt(prompt)], "reminder", REMINDER_SCHEMA, "low");
+  const subject = plain(str(o.subject, 200), 14).replace(/^reminder:\s*/i, "");
+  const body = plain(str(o.body, 1200), 80, true);
+  if (!subject || !body) throw new AIUnavailableError("empty reminder");
+  return { subject, body };
+}

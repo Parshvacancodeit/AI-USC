@@ -11,7 +11,7 @@ export const maxDuration = 30;
 const STATUSES = ["open", "assigned", "resolved", "rejected"];
 const PRIORITIES = ["low", "medium", "high", "urgent"];
 const REASONS = ["not_an_issue", "duplicate", "emergency_dps", "inappropriate", "outside_scope"];
-const EVENT_TYPES = ["assigned", "status", "priority", "rerouted", "note", "after_photo", "resolved", "reopened", "rejected", "merged", "work_order"];
+const EVENT_TYPES = ["assigned", "status", "priority", "rerouted", "note", "after_photo", "resolved", "reopened", "rejected", "merged", "work_order", "acknowledged", "reminder"];
 
 type Patch = {
   status?: string;

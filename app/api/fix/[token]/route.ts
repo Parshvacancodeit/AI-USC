@@ -5,6 +5,7 @@
 //      the supervisor confirms in /admin.
 import { NextResponse } from "next/server";
 import { logEvent } from "@/lib/admin-server";
+import { logEventSafe } from "@/lib/events";
 import { departmentFor } from "@/lib/departments";
 import { saveAndCheckFix } from "@/lib/fix-check";
 import { hashToken, looksLikeToken } from "@/lib/fix-tokens";
@@ -79,7 +80,7 @@ export async function POST(req: Request, { params }: Ctx) {
     t.acknowledged_at = now;
     // Student page shows "In progress" for assigned issues
     await db.from("issues").update({ status: "assigned", updated_at: now }).eq("id", issue.id).eq("status", "open");
-    await logEvent(issue.id, actor, "status", `Acknowledged by ${t.office}`).catch(() => {});
+    await logEventSafe(issue.id, actor, "acknowledged", `${t.office} acknowledged`, undefined, { type: "status", text: `Acknowledged by ${t.office}` });
   }
 
   if (b?.action === "acknowledge") {

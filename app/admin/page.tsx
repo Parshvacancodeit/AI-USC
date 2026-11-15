@@ -57,6 +57,7 @@ import OfficeLoop from "@/components/admin/OfficeLoop";
 import RiskPanel from "@/components/admin/RiskPanel";
 import WhyOffice from "@/components/admin/WhyOffice";
 import { triageScore } from "@/lib/triage-score";
+import { isOverdue } from "@/lib/sla";
 import { OFFICE_CHOICES } from "@/lib/departments";
 import { routeFor } from "@/lib/routing";
 import type { Issue, Priority } from "@/lib/types";
@@ -292,8 +293,24 @@ function Overview({ list, open, go }: { list: AdminIssue[]; open: (id: string) =
         <Kpi label="Reports, last 24 h" value={m.reports24h} color="var(--color-ink)" Icon={Users} />
       </div>
 
+      {(() => {
+        const late = list.filter((i) => isOverdue(i));
+        if (!late.length) return null;
+        const by = new Map<string, number>();
+        late.forEach((i) => by.set(i.office, (by.get(i.office) ?? 0) + 1));
+        return (
+          <button onClick={() => go("queue")} className="flex w-full items-center gap-3 rounded-xl bg-open/10 p-4 text-left">
+            <AlertTriangle size={20} className="shrink-0 text-open" />
+            <div className="min-w-0">
+              <p className="font-bold text-open">Overdue: {late.length}</p>
+              <p className="truncate text-xs text-open/90">{[...by.entries()].map(([o, n]) => `${o} (${n})`).join(" · ")} haven&apos;t acknowledged in time</p>
+            </div>
+          </button>
+        );
+      })()}
+
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card title="Needs attention" sub="High and urgent, oldest first" className="lg:col-span-2" action={<button onClick={() => go("queue")} className="text-sm font-semibold text-accent">Open queue</button>}>
+        <Card title="Needs attention" sub="High and urgent, by smart score" className="lg:col-span-2" action={<button onClick={() => go("queue")} className="text-sm font-semibold text-accent">Open queue</button>}>
           {m.urgent.length === 0 ? (
             <Empty text="Nothing urgent. Nice." />
           ) : (
@@ -335,7 +352,7 @@ function Overview({ list, open, go }: { list: AdminIssue[]; open: (id: string) =
 
 // ---------------- Queue ----------------
 function Queue({ list, open }: { list: AdminIssue[]; open: (id: string) => void }) {
-  const [tab, setTab] = useState<AdminStatus | "all">("open");
+  const [tab, setTab] = useState<AdminStatus | "all" | "overdue">("open");
   const [q, setQ] = useState("");
   const [office, setOffice] = useState("");
   const [type, setType] = useState("");
@@ -347,7 +364,7 @@ function Queue({ list, open }: { list: AdminIssue[]; open: (id: string) => void 
   const rows = useMemo(() => {
     const s = q.trim().toLowerCase();
     return list
-      .filter((i) => tab === "all" || i.status === tab)
+      .filter((i) => tab === "all" || (tab === "overdue" ? isOverdue(i) : i.status === tab))
       .filter((i) => !office || i.office === office)
       .filter((i) => !type || i.category === type)
       .filter((i) => !prio || i.priority === prio)
@@ -366,7 +383,7 @@ function Queue({ list, open }: { list: AdminIssue[]; open: (id: string) => void 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list, tab, q, office, type, prio, sort, scores]);
 
-  const count = (s: AdminStatus | "all") => (s === "all" ? list.length : list.filter((i) => i.status === s).length);
+  const count = (s: AdminStatus | "all" | "overdue") => (s === "all" ? list.length : s === "overdue" ? list.filter((i) => isOverdue(i)).length : list.filter((i) => i.status === s).length);
   const offices = [...new Set(list.map((i) => i.office))];
   const types = [...new Set(list.map((i) => i.category))];
 
@@ -382,9 +399,9 @@ function Queue({ list, open }: { list: AdminIssue[]; open: (id: string) => void 
         }
       />
       <div className="flex gap-1 overflow-x-auto rounded-xl bg-surface p-1">
-        {(["open", "assigned", "resolved", "rejected", "all"] as const).map((s) => (
-          <button key={s} onClick={() => setTab(s)} className={`h-9 shrink-0 rounded-lg px-3 text-sm font-semibold ${tab === s ? "bg-cardinal text-white" : "text-muted"}`}>
-            {s === "all" ? "All" : STATUS_UI[s].label} <span className="opacity-70">{count(s)}</span>
+        {(["open", "assigned", "overdue", "resolved", "rejected", "all"] as const).map((s) => (
+          <button key={s} onClick={() => setTab(s)} className={`h-9 shrink-0 rounded-lg px-3 text-sm font-semibold ${tab === s ? "bg-cardinal text-white" : s === "overdue" && count(s) > 0 ? "text-open" : "text-muted"}`}>
+            {s === "all" ? "All" : s === "overdue" ? "Overdue" : STATUS_UI[s].label} <span className="opacity-70">{count(s)}</span>
           </button>
         ))}
       </div>
@@ -526,6 +543,7 @@ function Drawer({ issue: i, all, onClose }: { issue: AdminIssue; all: AdminIssue
               <Badge color={STATUS_UI[i.status].color}>{STATUS_UI[i.status].label}</Badge>
               <Badge color={PRIORITY_COLOR[i.priority]}>{cap(i.priority)}</Badge>
               {i.duplicate_of && <Badge color="var(--color-muted)">Duplicate</Badge>}
+              {isOverdue(i) && <Badge color="var(--color-open)">Overdue</Badge>}
             </div>
             <h2 className="mt-2 text-xl font-bold leading-snug">{i.title}</h2>
             <p className="text-sm text-muted">
@@ -784,6 +802,7 @@ function Row({ i, onClick, wide, triage }: { i: AdminIssue; onClick: () => void;
         </span>
       )}
       <span className="hidden w-16 text-right text-xs text-muted md:block">{timeAgo(i.created_at)}</span>
+      {isOverdue(i) && <Badge color="var(--color-open)">Overdue</Badge>}
       <Badge color={STATUS_UI[i.status].color}>{STATUS_UI[i.status].label}</Badge>
     </button>
   );

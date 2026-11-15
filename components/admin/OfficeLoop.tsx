@@ -3,10 +3,11 @@
 // open      → AI work order (editable) → Approve & send (email to demo inbox, tagged [Department])
 // assigned  → sent / acknowledged status, office link; when the office submits a fix:
 //             before/after + AI verdict → Confirm resolved (existing resolve) or Send back.
-import { Check, CheckCircle2, CircleAlert, ClipboardCopy, ExternalLink, Loader2, Mail, RotateCcw, Send, Sparkles } from "lucide-react";
+import { AlarmClock, Check, CheckCircle2, CircleAlert, ClipboardCopy, ExternalLink, Loader2, Mail, RotateCcw, Send, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { adminError, adminPost, type AdminIssue } from "@/lib/admin";
 import { departmentFor } from "@/lib/departments";
+import { isOverdue, overdueLabel, reminderCount } from "@/lib/sla";
 
 type Draft = { subject: string; body: string; ai: boolean };
 type SendResult = { sent: boolean; link: string; to: string; department: string; subject: string; error?: string };
@@ -14,13 +15,16 @@ type SendResult = { sent: boolean; link: string; to: string; department: string;
 export default function OfficeLoop({ issue: i, before, onResolve }: { issue: AdminIssue; before: string | null; onResolve: (note: string) => void }) {
   const dept = departmentFor(i.office);
   const sentEvent = [...i.events].reverse().find((e) => e.type === "work_order" && /\/fix\//.test(e.text));
-  const link = sentEvent?.text.match(/https?:\/\/\S+\/fix\/[\w-]+/)?.[0] ?? null;
-  const acknowledged = i.events.some((e) => e.type === "status" && e.text.startsWith("Acknowledged"));
+  const linkEvent = [...i.events].reverse().find((e) => (e.type === "work_order" || e.type === "reminder" || e.type === "status") && /\/fix\//.test(e.text));
+  const link = linkEvent?.text.match(/https?:\/\/\S+\/fix\/[\w-]+/)?.[0] ?? null;
+  const overdue = isOverdue(i);
+  const reminders = reminderCount(i);
+  const acknowledged = i.events.some((e) => e.type === "acknowledged" || (e.type === "status" && e.text.startsWith("Acknowledged")));
   const verdict = i.ai_fix_verdict ?? null;
   const fixSubmitted = i.status === "assigned" && !!i.after_photo && !!verdict;
 
   if (i.status === "resolved" || i.status === "rejected") return null;
-  if (i.status === "open" || !sentEvent) return <Compose key={`${i.id}:${i.office}`} issue={i} dept={dept} />;
+  if (i.status === "open" || (!sentEvent && !i.assigned_at)) return <Compose key={`${i.id}:${i.office}`} issue={i} dept={dept} />;
 
   return (
     <section className="overflow-hidden rounded-2xl bg-surface">
@@ -32,12 +36,22 @@ export default function OfficeLoop({ issue: i, before, onResolve }: { issue: Adm
       </div>
 
       <ol className="space-y-1.5 p-3 text-sm">
-        <Step done>Work order {sentEvent.text.startsWith("Email (demo)") ? "ready (demo link, email not sent)" : "emailed to the demo inbox"}</Step>
+        <Step done>{sentEvent ? `Work order ${sentEvent.text.startsWith("Email (demo)") ? "ready (demo link, email not sent)" : "emailed to the demo inbox"}` : `Assigned to ${i.office}`}</Step>
         <Step done={acknowledged}>{acknowledged ? "Office acknowledged" : "Waiting for the office to acknowledge"}</Step>
         <Step done={fixSubmitted}>{fixSubmitted ? "After photo submitted" : "Waiting for the after photo"}</Step>
       </ol>
 
-      {link && <LinkRow link={link} demo={sentEvent.text.startsWith("Email (demo)")} />}
+      {overdue && !fixSubmitted && (
+        <div className="mx-3 mb-3 rounded-xl bg-open/10 p-3">
+          <p className="flex items-center gap-1.5 text-sm font-bold text-open">
+            <AlarmClock size={15} /> Overdue
+          </p>
+          <p className="mt-0.5 text-xs text-open/90">{overdueLabel(i)}</p>
+        </div>
+      )}
+      {(overdue || reminders > 0) && !fixSubmitted && !acknowledged && <ReminderBox key={i.id} issue={i} reminders={reminders} />}
+
+      {link && <LinkRow link={link} demo={/^(Reminder: )?Email \(demo\)/.test(linkEvent!.text)} />}
 
       {fixSubmitted && <Review issue={i} before={before} verdict={verdict!} onResolve={onResolve} />}
     </section>
@@ -181,6 +195,65 @@ function Review({ issue: i, before, verdict: v, onResolve }: { issue: AdminIssue
         </button>
       </div>
       <p className="text-[11px] text-muted">The AI is advisory. Confirming sends every reporter the &ldquo;Fixed&rdquo; alert.</p>
+    </div>
+  );
+}
+
+function ReminderBox({ issue: i, reminders }: { issue: AdminIssue; reminders: number }) {
+  const [draft, setDraft] = useState<{ subject: string; body: string; ai: boolean } | null>(null);
+  const [busy, setBusy] = useState<"draft" | "send" | null>(null);
+  const [sent, setSent] = useState<string | null>(null);
+  const dept = departmentFor(i.office);
+
+  async function draftIt() {
+    setBusy("draft");
+    try {
+      setDraft(await adminPost<{ subject: string; body: string; ai: boolean }>("/api/admin/draft-reminder", { issueId: i.id }));
+    } catch (e) {
+      adminError(`Couldn't draft the reminder: ${(e as Error).message}`);
+    } finally {
+      setBusy(null);
+    }
+  }
+  async function send() {
+    if (!draft) return;
+    setBusy("send");
+    try {
+      const r = await adminPost<SendResult>("/api/admin/send-work-order", { issueId: i.id, subject: draft.subject, body: draft.body, office: i.office, kind: "reminder" });
+      setSent(r.sent ? `Reminder sent to ${i.office}` : `Email (demo): reminder ready for ${i.office}`);
+      setDraft(null);
+      window.dispatchEvent(new Event("ripple:admin"));
+    } catch (e) {
+      adminError(`Couldn't send the reminder: ${(e as Error).message}`);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="mx-3 mb-3 space-y-2 rounded-xl bg-surface-2 p-3">
+      {reminders > 0 && <p className="text-xs text-muted">Reminders sent: {reminders}</p>}
+      {sent && (
+        <p role="status" className="flex items-center gap-1.5 text-sm font-semibold text-resolved">
+          <CheckCircle2 size={15} /> {sent}
+        </p>
+      )}
+      {!draft ? (
+        <button onClick={draftIt} disabled={!!busy} className="flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-surface text-sm font-semibold disabled:opacity-50">
+          {busy === "draft" ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} className="text-accent" />} Draft reminder (AI)
+        </button>
+      ) : (
+        <>
+          <p className="text-xs text-muted">
+            To: {i.office} &lt;{dept.email}&gt; · subject &ldquo;[{dept.name}] Reminder: …&rdquo;{!draft.ai && " · Template (AI unavailable)"}
+          </p>
+          <input value={draft.subject} onChange={(e) => setDraft({ ...draft, subject: e.target.value })} aria-label="Reminder subject" className="h-10 w-full rounded-lg bg-surface px-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-cardinal" />
+          <textarea value={draft.body} onChange={(e) => setDraft({ ...draft, body: e.target.value })} aria-label="Reminder body" rows={5} className="w-full rounded-lg bg-surface p-3 text-sm outline-none focus:ring-2 focus:ring-cardinal" />
+          <button onClick={send} disabled={!!busy || draft.subject.trim().length < 3 || draft.body.trim().length < 10} className="flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-cardinal text-sm font-semibold text-white disabled:opacity-40">
+            {busy === "send" ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} Send reminder
+          </button>
+        </>
+      )}
     </div>
   );
 }

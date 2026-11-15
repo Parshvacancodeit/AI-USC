@@ -2,8 +2,10 @@
 // Supervisor approved: create a one-time office link, email the work order to DEMO_OFFICE_INBOX tagged
 // [Department], set the issue to "assigned", log it. If email isn't configured or fails, still returns the link
 // ({ sent: false, link }) so the demo can continue.
+// kind: "reminder" → subject "Reminder: …", event type 'reminder'; doesn't change status, assigned_at or the deadline clock.
 import { NextResponse } from "next/server";
 import { logEvent, requireAdmin } from "@/lib/admin-server";
+import { logEventSafe } from "@/lib/events";
 import { departmentFor } from "@/lib/departments";
 import { sendDemoEmail } from "@/lib/email";
 import { appUrl, hashToken, newToken, TOKEN_DAYS } from "@/lib/fix-tokens";
@@ -18,7 +20,8 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&l
 export async function POST(req: Request) {
   const admin = requireAdmin(req);
   if (admin instanceof NextResponse) return admin;
-  const b = (await req.json().catch(() => null)) as { issueId?: string; subject?: string; body?: string; office?: string } | null;
+  const b = (await req.json().catch(() => null)) as { issueId?: string; subject?: string; body?: string; office?: string; kind?: string } | null;
+  const reminder = b?.kind === "reminder";
   if (!b?.issueId || !UUID.test(b.issueId)) return bad(400, "issueId (uuid) is required");
   const subject = (b.subject ?? "").replace(/\s+/g, " ").trim().slice(0, 150);
   const text = (b.body ?? "").trim().slice(0, 3000);
@@ -46,12 +49,17 @@ export async function POST(req: Request) {
   }
   const link = `${appUrl(req)}/fix/${token}`;
 
-  const fullSubject = `[${dept.name}] ${subject}`;
+  const fullSubject = `[${dept.name}] ${reminder ? "Reminder: " : ""}${subject.replace(/^reminder:\s*/i, "")}`;
   const emailText = `To: ${office} <${dept.email}>\n\n${text}\n\nOpen this job (no login needed): ${link}\nAcknowledge it, then upload an after photo when it's fixed. The link works for ${TOKEN_DAYS} days.\n\n— Ripple (demo). Sent to the demo inbox, not to a real USC office.`;
   const html = `<p style="color:#666">To: ${esc(office)} &lt;${esc(dept.email)}&gt;</p><p style="white-space:pre-wrap">${esc(text)}</p><p><a href="${esc(link)}" style="display:inline-block;padding:12px 18px;background:#990000;color:#fff;border-radius:10px;text-decoration:none;font-weight:600">Open this job</a></p><p style="color:#666;font-size:13px">Acknowledge it, then upload an after photo when it's fixed. The link works for ${TOKEN_DAYS} days.<br>Ripple (demo): sent to the demo inbox, not to a real USC office.</p>`;
   const email = await sendDemoEmail({ subject: fullSubject, text: emailText, html });
 
   const now = new Date().toISOString();
+  if (reminder) {
+    const remText = email.sent ? `Reminder emailed to ${dept.name} (${dept.email}). Office link: ${link}` : `Email (demo): reminder for ${dept.name} not sent. Office link: ${link}`;
+    await logEventSafe(issue.id, admin.name, "reminder", remText, { subject: fullSubject, to: dept.email, sent: email.sent, error: email.error ?? null, text: emailText }, { type: "status", text: `Reminder: ${remText}` });
+    return NextResponse.json({ sent: email.sent, link, to: dept.email, department: dept.name, office, subject: fullSubject, kind: "reminder", ...(email.error ? { error: email.error } : {}) });
+  }
   const upd = await db
     .from("issues")
     .update({ status: "assigned", assigned_team: office, assigned_at: now, updated_at: now, ...(issue.first_response_at ? {} : { first_response_at: now }) })
