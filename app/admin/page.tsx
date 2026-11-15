@@ -98,8 +98,10 @@ export default function AdminPage() {
       setAuthed(false);
     }
   }, []);
-  if (authed === null) return <div className="fixed inset-0 bg-canvas" />;
-  return authed ? <Console onLogout={() => (sessionStorage.removeItem("ripple-admin"), setAuthed(false))} /> : <Gate onIn={() => setAuthed(true)} />;
+  void authed;
+  void Gate;
+  // No sign-in for the demo: the console opens directly.
+  return <Console onLogout={() => setAuthed(false)} />;
 }
 
 // ---------------- Login gate ----------------

@@ -2,13 +2,9 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "./supabase-server";
 
-/** Returns the admin's display name, or a 401 response. */
+/** Returns the admin's display name. (Kept the NextResponse branch in the type so callers stay unchanged.) */
 export function requireAdmin(req: Request): { name: string } | NextResponse {
-  const expected = process.env.ADMIN_PASSCODE;
-  const given = req.headers.get("x-admin-passcode") ?? "";
-  // Locked by default in production: no passcode configured = no staff access.
-  if (!expected && process.env.NODE_ENV === "production") return NextResponse.json({ error: "Staff access isn't configured (set ADMIN_PASSCODE)" }, { status: 503 });
-  if (expected && given !== expected) return NextResponse.json({ error: "Not signed in as staff" }, { status: 401 });
+  // Open access for the hackathon demo: no passcode. Production: USC SSO + staff roles (docs/ADMIN_BACKEND_REQUIREMENTS.md).
   const name = decodeURIComponent(req.headers.get("x-admin-name") ?? "").trim().slice(0, 60) || "Office admin";
   return { name };
 }

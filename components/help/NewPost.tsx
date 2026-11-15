@@ -4,6 +4,7 @@
 // photo (faces blurred on device), rules and how long the post stays live.
 import { Building2, Camera, ChevronRight, Clock, Globe2, Loader2, MapPin, MessageCircle, ShieldCheck, Sparkles, X } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import EmergencyScreen from "@/components/EmergencyScreen";
 import BuildingPicker, { type PickedPlace } from "@/components/help/BuildingPicker";
@@ -34,6 +35,7 @@ type Audience = "all" | "building";
 
 export default function NewPost({ kind, existing = [], onClose, onPosted }: { kind: Extract<HelpKind, "ask" | "favor">; existing?: HelpPost[]; onClose: () => void; onPosted: (id: string) => void }) {
   const c = COPY[kind];
+  const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -172,7 +174,16 @@ export default function NewPost({ kind, existing = [], onClose, onPosted }: { ki
           <div className="mt-4 border-l-2 border-gold pl-3 rise">
             <p className="text-[12px] font-semibold uppercase tracking-wider text-muted">{c.similar}</p>
             {similar.map((p) => (
-              <Link key={p.id} href={`/help/post/${p.id}`} onClick={onClose} className="block py-2">
+              <Link
+                key={p.id}
+                href={`/help/post/${p.id}`}
+                onClick={(e) => {
+                  e.preventDefault(); // navigate first; closing the sheet first would cancel the tap
+                  haptic();
+                  router.push(`/help/post/${p.id}`);
+                }}
+                className="block py-2"
+              >
                 <p className="text-[15px] font-semibold leading-snug">{p.title}</p>
                 <p className="mt-0.5 flex items-center gap-2 text-[12px] text-muted">
                   <MessageCircle size={12} /> {p.reply_count} · {shortPlace(p.location_name)} · {timeAgo(p.created_at)}
