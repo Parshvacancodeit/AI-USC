@@ -2,6 +2,8 @@
 import { NextResponse } from "next/server";
 import { getUserFromRequest, supabaseAdmin } from "@/lib/supabase-server";
 import { catInfo } from "@/lib/campus";
+import { logEvent } from "@/lib/admin-server";
+import { routeFor } from "@/lib/routing";
 import type { NewIssueInput, Priority } from "@/lib/types";
 
 export const maxDuration = 30;
@@ -78,9 +80,12 @@ export async function POST(req: Request) {
   const up = await db.storage.from("report-photos").upload(photoPath, photo, { contentType: "image/jpeg", upsert: false });
   if (up.error) return bad(502, `Photo upload failed: ${up.error.message}`);
 
+  let routed: { office: string; why: string } | null = null;
   if (isNew) {
     const n = body.newIssue!;
+    routed = routeFor(n.category, n.locationId, n.floor); // P3: auto-route; status stays "open" = waiting for supervisor
     const { error } = await db.from("issues").insert({
+      assigned_team: routed.office,
       id: issueId,
       location_id: n.locationId,
       floor: n.floor ?? null,
@@ -110,6 +115,8 @@ export async function POST(req: Request) {
     if (repErr.code === "23505") return bad(409, "already_reported");
     return bad(500, `Could not save report: ${repErr.message}`);
   }
+
+  if (routed) await logEvent(issueId, "Ripple", "rerouted", `Auto-routed to ${routed.office}`, { why: routed.why }).catch(() => {});
 
   const { data: after } = await db.from("issues").select("reporter_count").eq("id", issueId).single();
   return NextResponse.json({ issueId, reporterCount: after?.reporter_count ?? 1 });

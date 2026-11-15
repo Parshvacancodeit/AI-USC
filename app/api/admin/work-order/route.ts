@@ -4,6 +4,8 @@
 import { NextResponse } from "next/server";
 import { categoryDef, templateWorkOrder, writeWorkOrder, type WorkOrder, type WorkOrderInput } from "@/lib/ai";
 import { loadCategories } from "@/lib/ai-storage";
+import { departmentFor } from "@/lib/departments";
+import { routeFor } from "@/lib/routing";
 import { supabaseAdmin } from "@/lib/supabase-server";
 import type { Priority } from "@/lib/types";
 
@@ -15,7 +17,7 @@ export async function POST(req: Request) {
   if (!pass || req.headers.get("x-admin-passcode") !== pass) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const body = (await req.json().catch(() => null)) as { issueId?: string } | null;
+  const body = (await req.json().catch(() => null)) as { issueId?: string; office?: string } | null;
   if (!body?.issueId || !UUID.test(body.issueId)) {
     return NextResponse.json({ error: "issueId (uuid) is required" }, { status: 400 });
   }
@@ -29,10 +31,12 @@ export async function POST(req: Request) {
 
   let input: WorkOrderInput;
   let to: string | null;
+  let teamName: string | null = null;
+  let deptName = "";
   try {
     const { data: issue, error } = await db
       .from("issues")
-      .select("id, title, description, category, priority, floor, reporter_count, created_at, status, locations(name)")
+      .select("id, title, description, category, priority, floor, reporter_count, created_at, status, assigned_team, location_id, locations(name)")
       .eq("id", body.issueId)
       .maybeSingle();
     if (error) throw error;
@@ -48,10 +52,15 @@ export async function POST(req: Request) {
 
     const loc = issue.locations as unknown as { name: string } | { name: string }[] | null;
     const locationName = (Array.isArray(loc) ? loc[0]?.name : loc?.name) ?? "Unknown building";
-    to = routing.data?.team_email ?? null;
+    // Office: supervisor's choice (body.office) > auto-routed assigned_team > routing rules. Demo email per department.
+    const office = (typeof body.office === "string" && body.office.trim().slice(0, 80)) || issue.assigned_team || routeFor(issue.category, issue.location_id, issue.floor).office;
+    const dept = departmentFor(office);
+    to = dept.email;
+    teamName = office;
+    deptName = dept.name;
     const cat = categories.find((c) => c.id === issue.category) ?? categoryDef({ category: issue.category });
     input = {
-      teamName: routing.data?.team_name ?? "Facilities",
+      teamName: teamName ?? routing.data?.team_name ?? "Facilities",
       locationName,
       floor: issue.floor,
       title: issue.title,
@@ -79,5 +88,5 @@ export async function POST(req: Request) {
     order = templateWorkOrder(input);
     ai = false;
   }
-  return NextResponse.json({ ...order, to, team_name: input.teamName, ai });
+  return NextResponse.json({ ...order, to, team_name: input.teamName, department: deptName, ai });
 }

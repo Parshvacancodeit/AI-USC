@@ -26,6 +26,8 @@ export interface Issue {
   reporter_count: number;
   before_photo_path: string | null;
   after_photo_path: string | null;
+  /** P3: Claude before/after verdict, set when an after photo is checked. */
+  ai_fix_verdict?: { same_location: boolean; resolved: boolean; confidence: number; reason: string } | null;
   resolution_note: string | null;
   created_at: string;
   updated_at: string;
