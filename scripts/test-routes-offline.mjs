@@ -57,5 +57,8 @@ await check("send-work-order: no passcode", "/api/admin/send-work-order", { body
 await check("send-work-order: missing text", "/api/admin/send-work-order", { body: { issueId: id }, headers: { "x-admin-passcode": PASS } }, 400);
 await check("fix-review: no passcode", "/api/admin/fix-review", { body: { issueId: id } }, 401);
 
+// Office link API: malformed token → 404 before any DB lookup
+await check("fix link: malformed token", "/api/fix/bad", { body: { action: "acknowledge" } }, 404);
+
 console.log(failed ?`\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);
