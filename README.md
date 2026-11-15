@@ -349,11 +349,37 @@ POST /api/admin/assign      { issueId }                 // status='assigned', as
 POST /api/admin/verify-fix  { issueId, imageBase64 }    // upload resolution-photos/{issueId}.jpg, Claude before/after
   → { same_location: boolean; resolved: boolean; confidence: number; reason: string; after_photo_url: string }
 POST /api/admin/resolve     { issueId, note? }          // status='resolved', resolved_at=now()
-POST /api/admin/work-order  { issueId }                 // P3: Claude drafts a work order for the routed office (text only, read-only)
-  → { subject: string; body: string; urgency_note: string; to: string | null; team_name: string; ai: boolean }
-  // to = routing.team_email (null if unset). ai=false → Claude unavailable, fields come from a plain template. Never 500s because of AI.
+POST /api/admin/work-order  { issueId, office? }        // P3: Claude drafts a work order for the routed office (text only, read-only)
+  → { subject: string; body: string; urgency_note: string; to: string; team_name: string; department: string; ai: boolean }
+  // office: supervisor override, else issues.assigned_team. to = demo department email. ai=false → template. Never 500s because of AI.
+POST /api/admin/send-work-order { issueId, subject, body, office? }   // P3: supervisor "Approve & send"
+  → { sent: boolean; link: string; to: string; department: string; office: string; subject: string; error?: string }
+  // creates a fix_tokens link (7 days), emails DEMO_OFFICE_INBOX with subject "[Department] …", status='assigned', issue_events.
+  // Email off/failed → sent=false, still returns the link (admin shows "Email (demo)").
+POST /api/admin/fix-review  { issueId, note? }          // P3: "Send back" a submitted fix (clears after photo + verdict)
 ```
 Resolve fires the Realtime update that shows "Fixed" on phones.
+
+### Office loop (P3) — report → supervisor → office → supervisor → "Fixed"
+1. `/api/reports` creates the issue with `assigned_team = routeFor(category, location, floor).office`, status `open`
+   (= waiting for supervisor), and logs "Auto-routed to <office>".
+2. `/admin`: the work order is drafted by Claude; the supervisor edits it, changes the office, or rejects.
+   Nothing is sent until **Approve & send**.
+3. Email goes **only** to `DEMO_OFFICE_INBOX` (Resend REST), subject `[Department] …`, recipient shown as
+   `<dept>@ripple-demo.test` (`lib/departments.ts`). Never real USC addresses.
+4. Office opens `/fix/<token>` (no login): **Acknowledge**, then **Upload after photo** → Claude before/after check,
+   verdict saved to `issues.ai_fix_verdict`. The office never resolves.
+5. `/admin` shows "Fix submitted": before/after + AI verdict → **Confirm resolved** (existing resolve) or **Send back**.
+6. Resolve → Realtime → "Fixed" toast on every phone that reported it.
+```ts
+GET  /api/fix/[token]                                  → { office, department, acknowledged_at, fix_submitted_at, issue: {…, verdict} }
+POST /api/fix/[token] { action: "acknowledge" }        → same summary
+POST /api/fix/[token] { action: "submit_fix", imageBase64 } → same summary with verdict
+// 404 invalid link · 410 expired · 409 already resolved/rejected
+```
+Schema: `supabase/fix_tokens.sql` (table `fix_tokens`: token_hash (sha256), issue_id, office, expires_at,
+acknowledged_at, fix_submitted_at; plus demo `routing.team_email`). Env: `RESEND_API_KEY`, `EMAIL_FROM`,
+`DEMO_OFFICE_INBOX`, `APP_URL`.
 
 ---
 
