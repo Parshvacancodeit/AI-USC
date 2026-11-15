@@ -258,6 +258,7 @@ function Console({ onLogout }: { onLogout: () => void }) {
           ) : (
             <SettingsView list={list} />
           )}
+          {list.some((x) => x.is_demo) && <p className="pt-6 text-center text-xs text-muted">Includes demo history for illustration.</p>}
         </div>
       </main>
 

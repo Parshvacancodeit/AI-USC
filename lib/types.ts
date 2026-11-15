@@ -26,6 +26,11 @@ export interface Issue {
   reporter_count: number;
   before_photo_path: string | null;
   after_photo_path: string | null;
+  /** P3 Dispatch Copilot (supabase/copilot.sql) */
+  is_demo?: boolean;
+  ai_risk?: { safety_risk: boolean; notify_dps: boolean; act_today: boolean; reason: string; confidence: number } | null;
+  ai_confidence?: number | null;
+  ai_insight?: { recurring: boolean; likely_cause: string; recommendation: string; confidence: number; count: number; resolved: number; median_days?: number | null; computed_at: string } | null;
   /** P3: Claude before/after verdict, set when an after photo is checked. */
   ai_fix_verdict?: { same_location: boolean; resolved: boolean; confidence: number; reason: string } | null;
   resolution_note: string | null;
