@@ -290,6 +290,9 @@ counts are invented. `/admin` shows "Includes demo history for illustration." wh
 
 ### Dispatch Copilot in `/admin` (P3)
 - **Risk panel**: AI triage risk (safety risk, notify DPS, act today) with reason + confidence. Advisory.
+- **Smart queue** (`lib/triage-score.ts`, rules, default sort): priority (urgent 40 · high 25 · medium 12 · low 5)
+  + safety risk 20 + act today 10 + accessibility 15 + 3/student (max 10) + 4 per similar issue at the same place in
+  45 days (max 24) + 0.5/hour open (max 20) + overdue 15. Rows show the score and top 3 reasons.
 - **Why this office?**: client-side, from `routeFor().why`, building type (`placeKind`), problem type, AI category
   confidence; shows "Re-routed by <name>" when a supervisor changed the office. Rules, not AI.
 

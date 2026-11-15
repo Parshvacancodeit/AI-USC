@@ -56,6 +56,7 @@ import { setTheme, useTheme } from "@/lib/theme";
 import OfficeLoop from "@/components/admin/OfficeLoop";
 import RiskPanel from "@/components/admin/RiskPanel";
 import WhyOffice from "@/components/admin/WhyOffice";
+import { triageScore } from "@/lib/triage-score";
 import { OFFICE_CHOICES } from "@/lib/departments";
 import { routeFor } from "@/lib/routing";
 import type { Issue, Priority } from "@/lib/types";
@@ -297,7 +298,9 @@ function Overview({ list, open, go }: { list: AdminIssue[]; open: (id: string) =
             <Empty text="Nothing urgent. Nice." />
           ) : (
             [...m.urgent]
-              .sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at))
+              .map((i) => ({ i, t: triageScore(i, list) }))
+              .sort((a, b) => b.t.score - a.t.score)
+              .map(({ i }) => i)
               .slice(0, 6)
               .map((i) => <Row key={i.id} i={i} onClick={() => open(i.id)} />)
           )}
@@ -337,7 +340,8 @@ function Queue({ list, open }: { list: AdminIssue[]; open: (id: string) => void 
   const [office, setOffice] = useState("");
   const [type, setType] = useState("");
   const [prio, setPrio] = useState("");
-  const [sort, setSort] = useState<"new" | "old" | "prio" | "reporters">("prio");
+  const [sort, setSort] = useState<"smart" | "new" | "old" | "prio" | "reporters">("smart");
+  const scores = useMemo(() => new Map(list.map((i) => [i.id, triageScore(i, list)])), [list]);
   const RANK: Record<Priority, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
 
   const rows = useMemo(() => {
@@ -349,7 +353,9 @@ function Queue({ list, open }: { list: AdminIssue[]; open: (id: string) => void 
       .filter((i) => !prio || i.priority === prio)
       .filter((i) => !s || `${i.title} ${i.locationLabel} ${i.description ?? ""}`.toLowerCase().includes(s))
       .sort((a, b) =>
-        sort === "new"
+        sort === "smart"
+          ? scores.get(b.id)!.score - scores.get(a.id)!.score || +new Date(a.created_at) - +new Date(b.created_at)
+          : sort === "new"
           ? +new Date(b.created_at) - +new Date(a.created_at)
           : sort === "old"
             ? +new Date(a.created_at) - +new Date(b.created_at)
@@ -358,7 +364,7 @@ function Queue({ list, open }: { list: AdminIssue[]; open: (id: string) => void 
               : RANK[a.priority] - RANK[b.priority] || +new Date(a.created_at) - +new Date(b.created_at),
       );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [list, tab, q, office, type, prio, sort]);
+  }, [list, tab, q, office, type, prio, sort, scores]);
 
   const count = (s: AdminStatus | "all") => (s === "all" ? list.length : list.filter((i) => i.status === s).length);
   const offices = [...new Set(list.map((i) => i.office))];
@@ -391,11 +397,11 @@ function Queue({ list, open }: { list: AdminIssue[]; open: (id: string) => void 
         <Select value={type} onChange={setType} options={[["", "All problem types"], ...types.map((t) => [t, catInfo(t).label] as [string, string])]} />
         <div className="grid grid-cols-2 gap-2">
           <Select value={prio} onChange={setPrio} options={[["", "Any priority"], ...PRIORITIES.map((p) => [p, cap(p)] as [string, string])]} />
-          <Select value={sort} onChange={(v) => setSort(v as typeof sort)} options={[["prio", "Priority"], ["new", "Newest"], ["old", "Oldest"], ["reporters", "Most reports"]]} />
+          <Select value={sort} onChange={(v) => setSort(v as typeof sort)} options={[["smart", "Smart (AI)"], ["prio", "Priority"], ["new", "Newest"], ["old", "Oldest"], ["reporters", "Most reports"]]} />
         </div>
       </div>
       <Card title={`${rows.length} issue${rows.length === 1 ? "" : "s"}`}>
-        {rows.length === 0 ? <Empty text="No issues match these filters." /> : rows.map((i) => <Row key={i.id} i={i} onClick={() => open(i.id)} wide />)}
+        {rows.length === 0 ? <Empty text="No issues match these filters." /> : rows.map((i) => <Row key={i.id} i={i} onClick={() => open(i.id)} wide triage={scores.get(i.id)} />)}
       </Card>
     </div>
   );
@@ -744,7 +750,7 @@ function Kpi({ label, value, color, Icon }: { label: string; value: string | num
   );
 }
 
-function Row({ i, onClick, wide }: { i: AdminIssue; onClick: () => void; wide?: boolean }) {
+function Row({ i, onClick, wide, triage }: { i: AdminIssue; onClick: () => void; wide?: boolean; triage?: { score: number; reasons: string[] } }) {
   return (
     <button onClick={onClick} className="flex w-full items-center gap-3 border-t hairline px-3 py-3 text-left first:border-t-0 hover:bg-surface-2">
       <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: PRIORITY_COLOR[i.priority] }} title={`${i.priority} priority`} />
@@ -757,7 +763,21 @@ function Row({ i, onClick, wide }: { i: AdminIssue; onClick: () => void; wide?: 
           {i.locationLabel} · {i.office}
           {i.assignee ? ` · ${i.assignee}` : ""}
         </p>
+        {triage && triage.reasons.length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {triage.reasons.map((r) => (
+              <span key={r} className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${r === "Overdue" || r === "Safety risk" ? "bg-open/15 text-open" : "bg-surface-2 text-muted"}`}>
+                {r}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
+      {triage && triage.score > 0 && (
+        <span className="w-9 shrink-0 text-right text-base font-extrabold tabular-nums" title="Smart priority score">
+          {triage.score}
+        </span>
+      )}
       {wide && (
         <span className="hidden items-center gap-1 text-xs text-muted md:flex">
           <Users size={12} /> {i.reporter_count}

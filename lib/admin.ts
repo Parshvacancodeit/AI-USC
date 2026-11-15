@@ -12,7 +12,7 @@ export type RejectReason = "not_an_issue" | "duplicate" | "emergency_dps" | "ina
 export type AdminEvent = {
   at: string;
   by: string;
-  type: "created" | "assigned" | "status" | "priority" | "rerouted" | "note" | "after_photo" | "resolved" | "reopened" | "rejected" | "merged" | "work_order";
+  type: "created" | "assigned" | "status" | "priority" | "rerouted" | "note" | "after_photo" | "resolved" | "reopened" | "rejected" | "merged" | "work_order" | "acknowledged" | "reminder";
   text: string;
 };
 
