@@ -288,7 +288,21 @@ counts are invented. `/admin` shows "Includes demo history for illustration." wh
 
 ---
 
-### Dispatch Copilot in `/admin` (P3)
+### Dispatch Copilot in `/admin` (P3) — what's AI vs rules
+| Feature | Engine | If Claude is down |
+|---|---|---|
+| Risk check at triage | AI (part of `/api/analyze`) | panel hidden |
+| Why this office? | rules (`routeFor`) | n/a |
+| Smart queue | rules (`lib/triage-score.ts`) | n/a |
+| Deadlines / Overdue | rules (`lib/sla.ts`) | n/a |
+| Reminder to slow office | AI (`writeReminder`) | template |
+| Recurring issue + cause | AI (`analyzeRecurrence`) | rule (≥ 3 in 45 days) |
+| Shift brief / USG report | AI words server-computed stats | template from the same stats |
+
+Demo setting: `NEXT_PUBLIC_SLA_DEMO_MINUTES=2` in Vercel (then redeploy) makes every office deadline 2 minutes, so
+Overdue → reminder can be shown live. Unset it after the demo.
+
+
 - **Risk panel**: AI triage risk (safety risk, notify DPS, act today) with reason + confidence. Advisory.
 - **Smart queue** (`lib/triage-score.ts`, rules, default sort): priority (urgent 40 · high 25 · medium 12 · low 5)
   + safety risk 20 + act today 10 + accessibility 15 + 3/student (max 10) + 4 per similar issue at the same place in
