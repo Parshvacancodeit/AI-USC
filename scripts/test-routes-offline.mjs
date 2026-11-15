@@ -52,5 +52,10 @@ await check("help/replies: no sign-in", "/api/help/replies", { body: { postId: i
 await check("help/resolve: no sign-in", "/api/help/resolve", { body: { postId: id, action: "resolve" } }, 401);
 await check("help/posts: bad token", "/api/help/posts", { body: { kind: "ask", title: "x" }, headers: { Authorization: "Bearer not-a-token" } }, 401);
 
+// Office loop — staff only, no AI, no DB writes on these paths
+await check("send-work-order: no passcode", "/api/admin/send-work-order", { body: { issueId: id, subject: "x", body: "y" } }, 401);
+await check("send-work-order: missing text", "/api/admin/send-work-order", { body: { issueId: id }, headers: { "x-admin-passcode": PASS } }, 400);
+await check("fix-review: no passcode", "/api/admin/fix-review", { body: { issueId: id } }, 401);
+
 console.log(failed ?`\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);
