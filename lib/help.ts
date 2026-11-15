@@ -212,7 +212,7 @@ export async function currentSpot(): Promise<Spot | null> {
   const p = await getPosition();
   if (!p) return null;
   const s = locate(p.lat, p.lng);
-  return s.kind === "campus" ? null : s;
+  return s.kind === "off_campus" || !s.location.id ? null : s;
 }
 
 export function distanceM(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
