@@ -54,6 +54,7 @@ import {
 } from "@/lib/admin";
 import { setTheme, useTheme } from "@/lib/theme";
 import OfficeLoop from "@/components/admin/OfficeLoop";
+import RiskPanel from "@/components/admin/RiskPanel";
 import { OFFICE_CHOICES } from "@/lib/departments";
 import { routeFor } from "@/lib/routing";
 import type { Issue, Priority } from "@/lib/types";
@@ -538,6 +539,7 @@ function Drawer({ issue: i, all, onClose }: { issue: AdminIssue; all: AdminIssue
               <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadAfter(e.target.files?.[0])} />
             </label>
           </div>
+          <RiskPanel risk={i.ai_risk ?? null} confidence={i.ai_confidence} />
           {!MOCK && (
             <OfficeLoop
               issue={i}

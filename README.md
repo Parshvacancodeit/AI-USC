@@ -329,7 +329,9 @@ JSON bodies. Images are base64 **after** compression and face blur (no `data:` p
 { is_issue: boolean; emergency: boolean; // emergency → show "Call DPS 213-740-4321 / 911", create NO report
   category: string;   // one of the routing.category ids
   title: string; description: string; priority: "low" | "medium" | "high" | "urgent"; confidence: number;
-  suggested_new_category: { id: string; label: string } | null }  // set only when no category fit well
+  suggested_new_category: { id: string; label: string } | null;  // set only when no category fit well
+  risk: { safety_risk: boolean; notify_dps: boolean; act_today: boolean; reason: string; confidence: number } | null }
+  // risk is advisory for the supervisor; /api/reports saves it to issues.ai_risk (+ confidence to issues.ai_confidence)
 // 502 on AI failure → client shows manual form
 { error: string }
 ```
@@ -439,6 +441,9 @@ If no category fits well, choose "other" (or the closest one) AND propose a new 
 new_category_id (snake_case) and new_category_label. If one fits, leave both empty.
 EMERGENCY: fire/smoke, injury, medical emergency, anyone in danger, or a crime → emergency = true, is_issue = false.
 About a person (behavior/appearance) rather than a facility → is_issue = false.
+Risk (for /admin): safety_risk = could injure someone or blocks a safe exit; notify_dps = ONLY immediate danger
+(fire/smoke, flooding near electrical, exposed live wiring, someone hurt or at risk); act_today = urgent/high or step-free
+access blocked; reason ≤ 1 sentence, never describes people; confidence 0–1.
 
 Priority:
 - urgent: safety hazard (e.g. trip hazard, exposed wiring, flooding), or blocks access for wheelchair users

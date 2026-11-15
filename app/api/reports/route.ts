@@ -4,6 +4,7 @@ import { getUserFromRequest, supabaseAdmin } from "@/lib/supabase-server";
 import { catInfo } from "@/lib/campus";
 import { logEvent } from "@/lib/admin-server";
 import { routeFor } from "@/lib/routing";
+import { cleanRisk } from "@/lib/ai";
 import type { NewIssueInput, Priority } from "@/lib/types";
 
 export const maxDuration = 30;
@@ -117,6 +118,18 @@ export async function POST(req: Request) {
   }
 
   if (routed) await logEvent(issueId, "Ripple", "rerouted", `Auto-routed to ${routed.office}`, { why: routed.why }).catch(() => {});
+
+  // P3 Dispatch Copilot: save the AI triage risk + category confidence (separate, error-tolerant update so a
+  // missing column or malformed suggestion never breaks a report).
+  if (isNew && body.aiSuggestion && typeof body.aiSuggestion === "object") {
+    const sug = body.aiSuggestion as { risk?: unknown; confidence?: unknown };
+    const risk = cleanRisk(sug.risk);
+    const conf = typeof sug.confidence === "number" && Number.isFinite(sug.confidence) ? Math.max(0, Math.min(1, sug.confidence)) : null;
+    if (risk || conf !== null) {
+      const { error: aiErr } = await db.from("issues").update({ ...(risk ? { ai_risk: risk } : {}), ...(conf !== null ? { ai_confidence: conf } : {}) }).eq("id", issueId);
+      if (aiErr) console.warn("[api/reports] couldn't save AI risk:", aiErr.message);
+    }
+  }
 
   const { data: after } = await db.from("issues").select("reporter_count").eq("id", issueId).single();
   return NextResponse.json({ issueId, reporterCount: after?.reporter_count ?? 1 });

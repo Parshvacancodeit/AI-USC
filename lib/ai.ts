@@ -103,7 +103,32 @@ const clamp01 = (n: unknown) => Math.max(0, Math.min(1, Number(n) || 0));
 const str = (v: unknown, max: number) => String(v ?? "").slice(0, max);
 
 // ---------- Prompt 1: Analyze ----------
+/** Triage risk check (Dispatch Copilot). Advisory; shown to the supervisor in /admin. */
+export type RiskCheck = { safety_risk: boolean; notify_dps: boolean; act_today: boolean; reason: string; confidence: number };
+
+const RISK_SCHEMA = {
+  type: "object",
+  properties: {
+    safety_risk: { type: "boolean" },
+    notify_dps: { type: "boolean" },
+    act_today: { type: "boolean" },
+    reason: { type: "string" },
+    confidence: { type: "number" },
+  },
+  required: ["safety_risk", "notify_dps", "act_today", "reason", "confidence"],
+  additionalProperties: false,
+};
+
+/** Validate/clamp a risk object from Claude or a client; null if malformed. */
+export function cleanRisk(r: unknown): RiskCheck | null {
+  if (!r || typeof r !== "object") return null;
+  const o = r as Record<string, unknown>;
+  if (typeof o.safety_risk !== "boolean" || typeof o.notify_dps !== "boolean" || typeof o.act_today !== "boolean") return null;
+  return { safety_risk: o.safety_risk, notify_dps: o.notify_dps, act_today: o.act_today, reason: str(o.reason, 200), confidence: clamp01(o.confidence) };
+}
+
 export type AnalyzeOutput = AnalyzeResult & {
+  risk: RiskCheck | null;
   /** true → fire, injury, medical, someone in danger, or a crime: client shows "Call DPS / 911" and creates NO report. */
   emergency: boolean;
   suggested_new_category: { id: string; label: string } | null;
@@ -122,9 +147,10 @@ function analyzeSchema(ids: string[]) {
       confidence: { type: "number" },
       new_category_id: { type: "string", description: "Only if no category fits well: short snake_case id for a new category. Otherwise empty string." },
       new_category_label: { type: "string", description: "Only if no category fits well: 1-3 word human label. Otherwise empty string." },
+      risk: RISK_SCHEMA,
     },
     additionalProperties: false,
-    required: ["is_issue", "emergency", "category", "title", "description", "priority", "confidence", "new_category_id", "new_category_label"],
+    required: ["is_issue", "emergency", "category", "title", "description", "priority", "confidence", "new_category_id", "new_category_label", "risk"],
   };
 }
 
@@ -159,8 +185,16 @@ Priority:
 
 Write a title of at most 8 words and a description of at most 2 sentences.
 Describe only what is visible. Never describe or identify people.
-Set confidence between 0 and 1.`;
-  const o = await callJson<AnalyzeResult & { emergency?: boolean; new_category_id?: string; new_category_label?: string }>(
+Set confidence between 0 and 1.
+
+Also fill "risk" for the supervisor:
+- safety_risk: true if this could injure someone or blocks a safe exit.
+- notify_dps: true ONLY for immediate danger: fire or smoke, flooding near electrical equipment, exposed live wiring,
+  or someone hurt or at risk. Otherwise false.
+- act_today: true if priority is urgent or high, or if wheelchair/step-free access is blocked.
+- reason: at most one sentence explaining the risk call. Never describe or identify people.
+- confidence: 0 to 1.`;
+  const o = await callJson<AnalyzeResult & { emergency?: boolean; new_category_id?: string; new_category_label?: string; risk?: unknown }>(
     [img(a.imageBase64), txt(prompt)], "report_triage", analyzeSchema(ids));
   if (!ids.includes(o.category) || !PRIORITIES.includes(o.priority)) {
     throw new AIUnavailableError("unexpected category/priority");
@@ -175,6 +209,7 @@ Set confidence between 0 and 1.`;
     description: str(o.description, 400),
     priority: o.priority,
     confidence: clamp01(o.confidence),
+    risk: cleanRisk(o.risk),
     suggested_new_category: newId && !ids.includes(newId)
       ? { id: newId, label: str(o.new_category_label, 40).trim() || humanize(newId) }
       : null,

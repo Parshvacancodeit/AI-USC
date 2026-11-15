@@ -58,7 +58,9 @@ export interface AnalyzeResult {
   description: string;
   priority: Priority;
   confidence: number;
-  suggested_new_category?: { id: string; label: string } | null;
+  suggested_new_category?: { id: string; label: string   /** P3: triage risk check (advisory, shown in /admin). */
+  risk?: { safety_risk: boolean; notify_dps: boolean; act_today: boolean; reason: string; confidence: number } | null;
+} | null;
 }
 
 // POST /api/duplicates
