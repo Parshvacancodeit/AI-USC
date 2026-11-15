@@ -14,6 +14,7 @@ const TABS = [
 
 export default function TabBar() {
   const path = usePathname();
+  const on = (href: string) => path === href || (href !== "/" && path.startsWith(`${href}/`));
   return (
     <nav className="glass-strong fixed inset-x-0 bottom-0 z-40 mx-auto max-w-[480px] pb-[env(safe-area-inset-bottom)]">
       <div className="grid h-[64px] grid-cols-5 items-center">
@@ -23,9 +24,9 @@ export default function TabBar() {
               key={t.href}
               href={t.href}
               onClick={() => haptic()}
-              className={`flex flex-col items-center gap-1 text-[10px] font-semibold tracking-wide transition ${path === t.href ? "text-ink" : "text-muted"}`}
+              className={`flex flex-col items-center gap-1 text-[10px] font-semibold tracking-wide transition ${on(t.href) ? "text-ink" : "text-muted"}`}
             >
-              <t.Icon size={22} strokeWidth={path === t.href ? 2.4 : 2} className={path === t.href && t.href === "/" ? "text-accent" : ""} />
+              <t.Icon size={22} strokeWidth={on(t.href) ? 2.4 : 2} className={on(t.href) && t.href === "/" ? "text-accent" : ""} />
               {t.label}
             </Link>
           ) : (

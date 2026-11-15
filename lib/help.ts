@@ -1,6 +1,7 @@
 // Help SC client: reads (anon key + RLS) and realtime from Supabase; writes through /api/help/*.
 import { HandHelping, MessageCircleQuestion, PackageCheck, Search, type LucideIcon } from "lucide-react";
 import { ApiError, authHeaders, browserClient, MOCK } from "./api";
+import { LOCATIONS } from "./campus";
 import { locate, type Spot } from "./locate";
 import type { CreatePostRequest, CreateReplyRequest, HelpBlocked, HelpKind, HelpPost, HelpReply, ResolveRequest } from "./help-types";
 
@@ -81,6 +82,41 @@ export class HelpBlockedError extends ApiError {
   }
 }
 
+// ---------- Demo mode (until supabase/help.sql has been run) ----------
+let demo = false;
+/** True when the Help SC tables don't exist yet and sample posts are shown instead. */
+export const isHelpDemo = () => demo;
+const missingTable = (e: { code?: string; message?: string } | null) =>
+  !!e && (e.code === "PGRST205" || e.code === "42P01" || /help_(posts|replies)/.test(e.message ?? ""));
+
+function demoPosts(): HelpPost[] {
+  const at = (name: string) => LOCATIONS.find((l) => l.name.startsWith(name)) ?? { id: "leavey", name, lat: 34.02178, lng: -118.28294 };
+  const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
+  const inH = (h: number) => new Date(Date.now() + h * 3600_000).toISOString();
+  const mk = (id: string, kind: HelpKind, title: string, body: string | null, where: string, floor: string | null, min: number, replies: number, status: HelpPost["status"] = "open"): HelpPost => {
+    const l = at(where);
+    return { id, kind, author_id: `demo-author-${id}`, title, body, photo_path: null, location_id: l.id, location_name: l.name, lat: l.lat, lng: l.lng, floor, status, resolved_reply_id: status === "resolved" ? `${id}-r1` : null, helper_id: null, reply_count: replies, created_at: ago(min), updated_at: ago(min), expires_at: inH(kind === "ask" ? 2 : kind === "favor" ? 20 : 300) };
+  };
+  return [
+    mk("demo-1", "ask", "How busy is Leavey 2nd floor right now?", "Looking for a table with an outlet for 2 hours.", "Leavey", "2", 6, 2),
+    mk("demo-2", "favor", "Need a USB-C charger for 20 min", "Laptop at 4%, sitting by the windows.", "Salvatori Computer Science", "2", 12, 1),
+    mk("demo-3", "found", "Found a set of keys with a Trojan lanyard", "Left them at the front desk.", "Wallis Annenberg", null, 40, 0),
+    mk("demo-4", "lost", "Lost black AirPods case", "Probably near the bike racks outside, around noon.", "Grace Ford Salvatori", null, 125, 1),
+    mk("demo-5", "ask", "Is the Ginsburg study lounge open tonight?", null, "Ginsburg", "1", 70, 1, "resolved"),
+  ];
+}
+function demoReplies(postId: string): HelpReply[] {
+  const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
+  const r = (n: number, body: string, min: number): HelpReply => ({ id: `${postId}-r${n}`, post_id: postId, author_id: `demo-helper-${postId}-${n}`, body, photo_path: null, created_at: ago(min) });
+  const all: Record<string, HelpReply[]> = {
+    "demo-1": [r(1, "About half full. Lots of open outlets along the windows.", 4), r(2, "Quiet zone is packed, group tables have space.", 2)],
+    "demo-2": [r(1, "I have one! I'm at the table by the stairs, blue backpack.", 8)],
+    "demo-4": [r(1, "Saw a black case on the bench by the GFS bike racks about an hour ago.", 30)],
+    "demo-5": [r(1, "Yes, open until midnight. Just walked past.", 60)],
+  };
+  return all[postId] ?? [];
+}
+
 // ---------- Reads ----------
 export function helpPhotoUrl(path: string | null) {
   if (!path) return null;
@@ -95,11 +131,20 @@ export async function listPosts(): Promise<HelpPost[]> {
     .gt("expires_at", new Date().toISOString())
     .order("created_at", { ascending: false })
     .limit(100);
+  if (missingTable(error)) {
+    demo = true;
+    return demoPosts();
+  }
   if (error) throw new ApiError(500, error.message);
+  demo = false;
   return data as HelpPost[];
 }
 
 export async function getPost(id: string): Promise<{ post: HelpPost | null; replies: HelpReply[] }> {
+  if (id.startsWith("demo-")) {
+    demo = true;
+    return { post: demoPosts().find((p) => p.id === id) ?? null, replies: demoReplies(id) };
+  }
   if (MOCK) return { post: null, replies: [] };
   const sb = browserClient();
   const [p, r] = await Promise.all([
@@ -125,6 +170,7 @@ export function subscribeHelp(cb: { post?: (p: HelpPost) => void; reply?: (r: He
 
 // ---------- Writes ----------
 async function send<T>(path: string, body: unknown): Promise<T> {
+  if (demo) throw new ApiError(503, "Demo mode: posting turns on once the Help SC database is set up.");
   let res: Response;
   try {
     res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", ...(await authHeaders()) }, body: JSON.stringify(body) });
@@ -185,3 +231,85 @@ export function timeLeft(iso: string) {
   const h = ms / 3600_000;
   return h < 1 ? `${Math.max(1, Math.round(h * 60))} min left` : h < 48 ? `${Math.round(h)} h left` : `${Math.round(h / 24)} days left`;
 }
+
+// ---------- Sections (each is its own feed inside the Help SC tab) ----------
+export type SectionId = "ask" | "favors" | "lost-found";
+export type SectionMeta = {
+  id: SectionId;
+  title: string;
+  blurb: string;
+  kinds: HelpKind[];
+  Icon: LucideIcon;
+  tint: string;
+  cta: string;
+  newKind: HelpKind;
+  empty: string;
+};
+
+export const SECTIONS: Record<SectionId, SectionMeta> = {
+  ask: {
+    id: "ask",
+    title: "Ask",
+    blurb: "Ask about a place. Trojans who are there answer.",
+    kinds: ["ask"],
+    Icon: MessageCircleQuestion,
+    tint: "#0a84ff",
+    cta: "Ask a question",
+    newKind: "ask",
+    empty: "No open questions. Ask how busy a place is, if it's open, or what's going on.",
+  },
+  favors: {
+    id: "favors",
+    title: "Favors",
+    blurb: "Small help from students nearby. Earn karma for helping.",
+    kinds: ["favor"],
+    Icon: HandHelping,
+    tint: "#30d158",
+    cta: "Ask for a favor",
+    newKind: "favor",
+    empty: "No open favors. Need a charger, an umbrella or a hand with something?",
+  },
+  "lost-found": {
+    id: "lost-found",
+    title: "Lost & Found",
+    blurb: "Lost something on campus, or found something?",
+    kinds: ["lost", "found"],
+    Icon: PackageCheck,
+    tint: "#ffb020",
+    cta: "Post an item",
+    newKind: "lost",
+    empty: "Nothing lost or found right now.",
+  },
+};
+export const SECTION_ORDER: SectionId[] = ["ask", "favors", "lost-found"];
+export const sectionOf = (k: HelpKind): SectionId => (k === "ask" ? "ask" : k === "favor" ? "favors" : "lost-found");
+
+// ---------- Live feed extras ----------
+/** Replies from the last few hours (for "latest reply" previews in the feed). */
+export async function listRecentReplies(hours = 24): Promise<HelpReply[]> {
+  if (MOCK || demo) return [];
+  const { data } = await browserClient()
+    .from("help_replies")
+    .select("*")
+    .gte("created_at", new Date(Date.now() - hours * 3600_000).toISOString())
+    .order("created_at", { ascending: false })
+    .limit(300);
+  return (data as HelpReply[]) ?? [];
+}
+
+export type RelatedItem = { postId: string; replyId: string | null; text: string; place: string; created_at: string; why: string };
+
+/** AI-picked recent posts/replies that help with this post ([] on any failure). */
+export async function fetchRelated(postId: string): Promise<RelatedItem[]> {
+  if (MOCK || demo || postId.startsWith("demo-")) return [];
+  try {
+    const res = await fetch("/api/help/related", { method: "POST", headers: { "Content-Type": "application/json", ...(await authHeaders()) }, body: JSON.stringify({ postId }) });
+    if (!res.ok) return [];
+    return ((await res.json()) as { items: RelatedItem[] }).items ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** Short place name for compact UI. */
+export const shortPlace = (n: string) => n.replace(/ of Letters, Arts and Sciences$/, "").replace(/ of Engineering/, "");
