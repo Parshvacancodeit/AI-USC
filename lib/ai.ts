@@ -658,3 +658,67 @@ Decide whether this looks like a recurring underlying problem (not coincidence).
     confidence: clamp01(o.confidence),
   };
 }
+
+// ---------- Prompt 9: Shift brief / weekly USG report (text only, from server-computed stats) ----------
+export type BriefStats = {
+  window: "today" | "week";
+  new_issues: number;
+  new_reporters: number;
+  open_by_priority: Record<string, number>;
+  resolved_in_window: number;
+  median_hours_to_fix: number | null;
+  overdue_by_office: { office: string; count: number }[];
+  top_recurring: { place: string; problem: string; count: number }[];
+  open_accessibility: number;
+  slowest_office: { office: string; median_hours_to_acknowledge: number } | null;
+};
+export type Brief = { headline: string; bullets: string[]; actions: string[] };
+
+const BRIEF_SCHEMA = {
+  type: "object",
+  properties: {
+    headline: { type: "string" },
+    bullets: { type: "array", items: { type: "string" } },
+    actions: { type: "array", items: { type: "string" } },
+  },
+  required: ["headline", "bullets", "actions"],
+  additionalProperties: false,
+};
+
+/** No-AI fallback: the same facts, stated plainly. */
+export function templateBrief(s: BriefStats): Brief {
+  const open = Object.values(s.open_by_priority).reduce((a, b) => a + b, 0);
+  const span = s.window === "today" ? "in the last 24 hours" : "this week";
+  const bullets = [
+    `${s.new_issues} new issues ${span} from ${s.new_reporters} student reports; ${s.resolved_in_window} resolved.`,
+    `${open} open (${["urgent", "high", "medium", "low"].map((p) => `${s.open_by_priority[p] ?? 0} ${p}`).join(", ")}).`,
+    s.median_hours_to_fix !== null ? `Median time to fix: ${s.median_hours_to_fix} h.` : "",
+    s.overdue_by_office.length ? `Overdue acknowledgements: ${s.overdue_by_office.map((o) => `${o.office} (${o.count})`).join(", ")}.` : "",
+    s.top_recurring.length ? `Repeat problems: ${s.top_recurring.map((r) => `${r.problem} at ${r.place} (${r.count})`).join("; ")}.` : "",
+    s.open_accessibility ? `${s.open_accessibility} accessibility issue${s.open_accessibility > 1 ? "s" : ""} open.` : "",
+  ].filter(Boolean).slice(0, 5);
+  const actions = [
+    s.overdue_by_office[0] ? `Follow up with ${s.overdue_by_office[0].office} on overdue work orders.` : "",
+    s.top_recurring[0] ? `Request an inspection for ${s.top_recurring[0].problem.toLowerCase()} at ${s.top_recurring[0].place}.` : "",
+    s.open_accessibility ? "Prioritize the open accessibility issues." : "",
+  ].filter(Boolean).slice(0, 3);
+  return { headline: s.window === "today" ? "Today on campus" : "This week on campus", bullets, actions };
+}
+
+export async function writeBrief(s: BriefStats): Promise<Brief> {
+  const prompt = `Write a ${s.window === "today" ? "start-of-shift brief for a campus facilities supervisor" : "weekly report for USC Undergraduate Student Government (USG)"}.
+Use ONLY these facts (JSON). Do not invent or estimate any number; every number you write must appear below.
+${JSON.stringify(s)}
+
+- headline: one sentence, the most important thing.
+- bullets: at most 5, one fact each, plain text, no markdown symbols.
+- actions: at most 3 concrete next steps that follow from the facts (e.g. follow up with an overdue office, inspect a repeat problem).
+Mention repeat problems by place and problem type, and the slowest office if present. Never mention students by name.
+Only connect an office to an issue, place or priority when the facts explicitly link them (e.g. overdue_by_office);
+never guess which office owns the urgent or accessibility issues.`;
+  const o = await callJson<Brief>([txt(prompt)], "brief", BRIEF_SCHEMA, "low");
+  const bullets = (o.bullets ?? []).map((b) => plain(str(b, 300), 45)).filter(Boolean).slice(0, 5);
+  const actions = (o.actions ?? []).map((a) => plain(str(a, 300), 35)).filter(Boolean).slice(0, 3);
+  if (!o.headline || !bullets.length) throw new AIUnavailableError("empty brief");
+  return { headline: plain(str(o.headline, 300), 35), bullets, actions };
+}

@@ -56,6 +56,7 @@ import { setTheme, useTheme } from "@/lib/theme";
 import OfficeLoop from "@/components/admin/OfficeLoop";
 import RiskPanel from "@/components/admin/RiskPanel";
 import InsightCard from "@/components/admin/InsightCard";
+import BriefCard from "@/components/admin/BriefCard";
 import WhyOffice from "@/components/admin/WhyOffice";
 import { triageScore } from "@/lib/triage-score";
 import { isOverdue } from "@/lib/sla";
@@ -285,6 +286,7 @@ function Overview({ list, open, go }: { list: AdminIssue[]; open: (id: string) =
   return (
     <div className="space-y-6 animate-fade-up">
       <Title title="Overview" sub="What's broken on campus right now" />
+      {!MOCK && <BriefCard />}
       <div className="grid grid-cols-2 gap-y-4 rounded-xl border hairline bg-surface py-4 lg:grid-cols-6">
         <Kpi label="Open" value={m.open} color="var(--color-open)" Icon={Inbox} />
         <Kpi label="In progress" value={m.assigned} color="var(--color-assigned)" Icon={Clock} />
