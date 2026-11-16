@@ -11,13 +11,49 @@ import { USC_BUILDINGS } from "@/lib/usc-buildings";
 
 const HEX: Record<Status, string> = { open: "#ff453a", assigned: "#ffb020", resolved: "#30d158", rejected: "#8e8e98" };
 const RANK: Record<Status, number> = { open: 3, assigned: 2, resolved: 1, rejected: 0 };
-const CAMERA = { pitch: 45, bearing: -17 };
+const CAMERA = { pitch: 72, bearing: -17 };
 // USC + ~4 miles each way
 const BOUNDS: [[number, number], [number, number]] = [
   [USC_CENTER[0] - 0.07, USC_CENTER[1] - 0.058],
   [USC_CENTER[0] + 0.07, USC_CENTER[1] + 0.058],
 ];
 const FONT = ["Noto Sans Bold"];
+
+
+/** USC palette for the base map: brick walls, clay-tile roofs, cardinal/gold roads. */
+const PAL = {
+  light: { bg: "#f6efe4", wall: "#b8705a", glass: "#a9cfe0", trim: "#f1e2cc", roof: "#cf9a83", ped: "#e7c3a8", minor: "#ffffff", mid: "#fff1cc", major: "#ffd451", casing: "#c9a98f", park: "#cfe3b4" },
+  dark: { bg: "#160d0d", wall: "#3b2622", glass: "#ffcc66", trim: "#2a1a17", roof: "#4a2a24", ped: "#4a2420", minor: "#2c2224", mid: "#4a3328", major: "#b38600", casing: "#0c0707", park: "#14200f" },
+};
+
+/** Facade tile: brick wall with two rows of glazed windows (drawn once, used as an extrusion pattern). */
+function facade(p: typeof PAL.light): ImageData {
+  const W = 20, H = 14, c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const g = c.getContext("2d")!;
+  g.fillStyle = p.wall; g.fillRect(0, 0, W, H);
+  for (let r = 0; r < 2; r++)
+    for (let k = 0; k < 3; k++) {
+      const x = 2 + k * 6, y = 2 + r * 7;
+      g.fillStyle = p.trim; g.fillRect(x - 1, y - 1, 5, 6);
+      const grad = g.createLinearGradient(x, y, x + 3, y + 4);
+      grad.addColorStop(0, p.glass); grad.addColorStop(1, p.wall);
+      g.fillStyle = grad; g.fillRect(x, y, 3, 4);
+    }
+  return g.getImageData(0, 0, W, H);
+}
+
+/** Recolor the base style's roads and ground in USC colors. */
+function paintBase(m: maplibregl.Map, p: typeof PAL.light) {
+  for (const l of m.getStyle().layers ?? []) {
+    const id = l.id;
+    if (l.type === "background") m.setPaintProperty(id, "background-color", p.bg);
+    if (l.type === "fill" && /park|grass|pitch/.test(id)) m.setPaintProperty(id, "fill-color", p.park);
+    if (l.type !== "line" || !/road|highway|tunnel|bridge/.test(id) || /rail|arrow|oneway/.test(id)) continue;
+    const color = /casing/.test(id) ? p.casing : /path|pedestrian/.test(id) ? p.ped : /motorway|trunk|primary|major/.test(id) ? p.major : /secondary|tertiary/.test(id) ? p.mid : p.minor;
+    m.setPaintProperty(id, "line-color", color);
+  }
+}
 
 type Props = {
   issues: Issue[];
@@ -121,7 +157,7 @@ export default function CampusMap({ issues, onSelect, onBuilding, focusId, focus
       ...CAMERA,
       minZoom: 12.5,
       maxZoom: 19,
-      maxPitch: 60,
+      maxPitch: 80,
       maxBounds: BOUNDS,
       attributionControl: { compact: true },
       fadeDuration: 0,
@@ -144,11 +180,20 @@ export default function CampusMap({ issues, onSelect, onBuilding, focusId, focus
       m.addLayer({ id: "usc-tint", type: "fill", source: "usc-areas", paint: { "fill-color": "#990000", "fill-opacity": light ? 0.06 : 0.1 } });
       m.addLayer({ id: "outside-dim", type: "fill", source: "outside", paint: { "fill-color": light ? "#2a0a0a" : "#000000", "fill-opacity": light ? 0.3 : 0.55 } });
       m.addSource("campus", { type: "geojson", data: { type: "FeatureCollection", features: [CAMPUS_RING, VILLAGE_RING].map((r) => ({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: r } })) } });
-      m.addLayer({ id: "campus-glow", type: "line", source: "campus", paint: { "line-color": "#990000", "line-width": 10, "line-blur": 8, "line-opacity": 0.5 } });
+      m.addLayer({ id: "campus-glow", type: "line", source: "campus", paint: { "line-color": light ? "#990000" : "#FFCC00", "line-width": 12, "line-blur": 9, "line-opacity": 0.5 } });
       m.addLayer({ id: "campus-edge", type: "line", source: "campus", paint: { "line-color": "#FFCC00", "line-width": 1.6 } });
 
-      // 3D buildings only when zoomed into campus (cheap at city zoom)
+      // USC look: recolored roads, brick buildings with glazed windows and clay-tile roofs, warm light
+      const pal = light ? PAL.light : PAL.dark;
+      paintBase(m, pal);
+      m.addImage("facade", facade(pal), { pixelRatio: 1 });
+      m.setLight({ anchor: "map", color: light ? "#fff1dc" : "#ffd9a8", intensity: light ? 0.38 : 0.25, position: [1.4, 210, 35] });
+      // Game-style sky: blue day sky fading to a warm haze, or a cardinal night with a gold horizon
+      m.setSky(light
+        ? { "sky-color": "#5fa8e8", "horizon-color": "#ffe2b8", "fog-color": "#f3e3cf", "sky-horizon-blend": 0.55, "horizon-fog-blend": 0.6, "fog-ground-blend": 0.92, "atmosphere-blend": 0.8 }
+        : { "sky-color": "#07051a", "horizon-color": "#7a1c0c", "fog-color": "#1c0d0a", "sky-horizon-blend": 0.5, "horizon-fog-blend": 0.6, "fog-ground-blend": 0.9, "atmosphere-blend": 0.6 });
       ["building", "building-3d"].forEach((id) => m.getLayer(id) && m.setLayoutProperty(id, "visibility", "none"));
+      const h: maplibregl.ExpressionSpecification = ["coalesce", ["get", "render_height"], 8];
       m.addLayer({
         id: "buildings-3d",
         type: "fill-extrusion",
@@ -156,11 +201,19 @@ export default function CampusMap({ issues, onSelect, onBuilding, focusId, focus
         "source-layer": "building",
         minzoom: 15,
         paint: {
-          "fill-extrusion-color": light ? "#dedad5" : "#23232c",
-          "fill-extrusion-height": ["coalesce", ["get", "render_height"], 8],
+          "fill-extrusion-pattern": "facade",
+          "fill-extrusion-height": h,
           "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
-          "fill-extrusion-opacity": 0.9,
+          "fill-extrusion-opacity": 0.95,
         },
+      });
+      m.addLayer({
+        id: "roofs",
+        type: "fill-extrusion",
+        source: "openmaptiles",
+        "source-layer": "building",
+        minzoom: 15,
+        paint: { "fill-extrusion-color": pal.roof, "fill-extrusion-base": h, "fill-extrusion-height": ["+", h, 1.2], "fill-extrusion-opacity": 0.95 },
       });
 
       m.addSource("floors", { type: "geojson", data: floorSlabs(latest.current.issues, slab) });
@@ -236,6 +289,7 @@ export default function CampusMap({ issues, onSelect, onBuilding, focusId, focus
         const p = (t % 1800) / 1800;
         m.setPaintProperty("pin-pulse", "circle-radius", 12 + p * 18);
         m.setPaintProperty("pin-pulse", "circle-opacity", 0.45 * (1 - p));
+        m.setPaintProperty("campus-glow", "line-opacity", 0.35 + 0.25 * Math.sin((t / 2600) * Math.PI * 2));
       };
       raf = requestAnimationFrame(tick);
 
@@ -293,7 +347,7 @@ export default function CampusMap({ issues, onSelect, onBuilding, focusId, focus
   useEffect(() => {
     const m = map.current;
     const loc = focusBuilding ? getLocation(focusBuilding) : null;
-    if (m && loc) m.easeTo({ center: [loc.lng, loc.lat], zoom: 17.8, pitch: 55, duration: 900 });
+    if (m && loc) m.easeTo({ center: [loc.lng, loc.lat], zoom: 17.8, pitch: 65, duration: 900 });
   }, [focusBuilding]);
 
   return (
