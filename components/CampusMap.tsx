@@ -8,10 +8,11 @@ import { CAMPUS_RING, VILLAGE_RING } from "@/lib/campus-geo";
 import type { Theme } from "@/lib/theme";
 import type { Issue, Status } from "@/lib/types";
 import { USC_BUILDINGS } from "@/lib/usc-buildings";
+import { USC_TREES } from "@/lib/usc-trees";
 
 const HEX: Record<Status, string> = { open: "#ff453a", assigned: "#ffb020", resolved: "#30d158", rejected: "#8e8e98" };
 const RANK: Record<Status, number> = { open: 3, assigned: 2, resolved: 1, rejected: 0 };
-const CAMERA = { pitch: 72, bearing: -17 };
+const CAMERA = { pitch: 76, bearing: -17 };
 // USC + ~4 miles each way
 const BOUNDS: [[number, number], [number, number]] = [
   [USC_CENTER[0] - 0.07, USC_CENTER[1] - 0.058],
@@ -22,8 +23,8 @@ const FONT = ["Noto Sans Bold"];
 
 /** USC palette for the base map: brick walls, clay-tile roofs, cardinal/gold roads. */
 const PAL = {
-  light: { bg: "#f6efe4", wall: "#b8705a", glass: "#a9cfe0", trim: "#f1e2cc", roof: "#cf9a83", ped: "#e7c3a8", minor: "#ffffff", mid: "#fff1cc", major: "#ffd451", casing: "#c9a98f", park: "#cfe3b4" },
-  dark: { bg: "#160d0d", wall: "#3b2622", glass: "#ffcc66", trim: "#2a1a17", roof: "#4a2a24", ped: "#4a2420", minor: "#2c2224", mid: "#4a3328", major: "#b38600", casing: "#0c0707", park: "#14200f" },
+  light: { bg: "#efe8dc", wall: "#b8705a", glass: "#a9cfe0", trim: "#f1e2cc", roof: "#cf9a83", ped: "#e4c7ac", minor: "#7a7d84", mid: "#6c6f77", major: "#5f626a", casing: "#d9d4cb", line: "#ffd34d", grass: "#8fca63", park: "#9bd36f", wood: "#5c9b43", water: "#3d9be0", leaf: ["#4f9a3a", "#5fae45", "#3f8a33"], trunk: "#6b4a2f" },
+  dark: { bg: "#120c0c", wall: "#3b2622", glass: "#ffcc66", trim: "#2a1a17", roof: "#4a2a24", ped: "#3a2622", minor: "#2c2c33", mid: "#34343c", major: "#3c3c45", casing: "#1a1416", line: "#ffb300", grass: "#1f3b1c", park: "#22421e", wood: "#183015", water: "#0e2c4a", leaf: ["#1f4a1c", "#275a22", "#183c16"], trunk: "#2a1c12" },
 };
 
 /** Facade tile: brick wall with two rows of glazed windows (drawn once, used as an extrusion pattern). */
@@ -43,16 +44,43 @@ function facade(p: typeof PAL.light): ImageData {
   return g.getImageData(0, 0, W, H);
 }
 
-/** Recolor the base style's roads and ground in USC colors. */
+/** Recolor the base style: asphalt roads with sidewalks, green grass and trees, blue water. */
 function paintBase(m: maplibregl.Map, p: typeof PAL.light) {
   for (const l of m.getStyle().layers ?? []) {
     const id = l.id;
     if (l.type === "background") m.setPaintProperty(id, "background-color", p.bg);
-    if (l.type === "fill" && /park|grass|pitch/.test(id)) m.setPaintProperty(id, "fill-color", p.park);
+    if (l.type === "fill") {
+      const c = /^water/.test(id) ? p.water : /wood|forest/.test(id) ? p.wood : /grass|pitch/.test(id) ? p.grass : /park/.test(id) ? p.park : null;
+      if (c) { m.setPaintProperty(id, "fill-color", c); m.setPaintProperty(id, "fill-opacity", 1); }
+    }
+    if (l.type === "line" && /^waterway/.test(id)) m.setPaintProperty(id, "line-color", p.water);
     if (l.type !== "line" || !/road|highway|tunnel|bridge/.test(id) || /rail|arrow|oneway/.test(id)) continue;
     const color = /casing/.test(id) ? p.casing : /path|pedestrian/.test(id) ? p.ped : /motorway|trunk|primary|major/.test(id) ? p.major : /secondary|tertiary/.test(id) ? p.mid : p.minor;
     m.setPaintProperty(id, "line-color", color);
   }
+}
+
+/** Low-poly 3D trees: trunk + two canopy tiers, built as small octagons around each tree point. */
+function octagon(lng: number, lat: number, r: number): [number, number][] {
+  const kx = r / (111320 * Math.cos((lat * Math.PI) / 180)), ky = r / 110540;
+  const ring: [number, number][] = [];
+  for (let i = 0; i <= 8; i++) {
+    const a = ((i % 8) / 8) * Math.PI * 2 + Math.PI / 8;
+    ring.push([lng + Math.cos(a) * kx, lat + Math.sin(a) * ky]);
+  }
+  return ring;
+}
+function treeData(p: typeof PAL.light): GeoJSON.FeatureCollection {
+  const f: GeoJSON.Feature[] = [];
+  const add = (ring: [number, number][], base: number, top: number, color: string) =>
+    f.push({ type: "Feature", properties: { base, top, color }, geometry: { type: "Polygon", coordinates: [ring] } });
+  USC_TREES.forEach(([lng, lat, k], i) => {
+    const leaf = p.leaf[i % p.leaf.length];
+    add(octagon(lng, lat, 0.35 * k), 0, 2.6 * k, p.trunk);
+    add(octagon(lng, lat, 2.6 * k), 2.2 * k, 6.2 * k, leaf);
+    add(octagon(lng, lat, 1.6 * k), 6.2 * k, 8.4 * k, leaf);
+  });
+  return { type: "FeatureCollection", features: f };
 }
 
 type Props = {
@@ -157,7 +185,7 @@ export default function CampusMap({ issues, onSelect, onBuilding, focusId, focus
       ...CAMERA,
       minZoom: 12.5,
       maxZoom: 19,
-      maxPitch: 80,
+      maxPitch: 85,
       maxBounds: BOUNDS,
       attributionControl: { compact: true },
       fadeDuration: 0,
@@ -214,6 +242,27 @@ export default function CampusMap({ issues, onSelect, onBuilding, focusId, focus
         "source-layer": "building",
         minzoom: 15,
         paint: { "fill-extrusion-color": pal.roof, "fill-extrusion-base": h, "fill-extrusion-height": ["+", h, 1.2], "fill-extrusion-opacity": 0.95 },
+      });
+
+      // Yellow center lines on real streets (close zoom only)
+      m.addLayer({
+        id: "road-lines",
+        type: "line",
+        source: "openmaptiles",
+        "source-layer": "transportation",
+        minzoom: 16,
+        filter: ["match", ["get", "class"], ["primary", "secondary", "tertiary", "trunk"], true, false],
+        layout: { "line-cap": "butt" },
+        paint: { "line-color": pal.line, "line-width": ["interpolate", ["linear"], ["zoom"], 16, 0.8, 19, 2.2], "line-dasharray": [4, 3], "line-opacity": 0.9 },
+      }, "buildings-3d");
+      // Trees
+      m.addSource("trees", { type: "geojson", data: treeData(pal) });
+      m.addLayer({
+        id: "trees",
+        type: "fill-extrusion",
+        source: "trees",
+        minzoom: 15,
+        paint: { "fill-extrusion-color": ["get", "color"], "fill-extrusion-base": ["get", "base"], "fill-extrusion-height": ["get", "top"], "fill-extrusion-opacity": 1 },
       });
 
       m.addSource("floors", { type: "geojson", data: floorSlabs(latest.current.issues, slab) });
@@ -302,9 +351,11 @@ export default function CampusMap({ issues, onSelect, onBuilding, focusId, focus
         seen = sessionStorage.getItem("ripple-intro") === "1";
         sessionStorage.setItem("ripple-intro", "1");
       } catch {}
-      const cam = m.cameraForBounds(campusBounds(), { padding: { top: 140, bottom: 300, left: 30, right: 30 }, ...CAMERA });
-      if (cam && seen) m.jumpTo({ ...cam, ...CAMERA });
-      else if (cam) m.easeTo({ ...cam, ...CAMERA, duration: 1200 });
+      // Fit campus top-down, then tilt toward the horizon so the sky shows above campus
+      const fit = m.cameraForBounds(campusBounds(), { padding: { top: 140, bottom: 300, left: 30, right: 30 }, bearing: CAMERA.bearing });
+      const cam = fit && { center: fit.center, zoom: (fit.zoom ?? 15.4) + 0.35, ...CAMERA };
+      if (cam && seen) m.jumpTo(cam);
+      else if (cam) m.easeTo({ ...cam, duration: 1200 });
     });
 
     return () => {
